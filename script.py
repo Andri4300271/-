@@ -7,7 +7,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 
-# Данні з GitHub Secrets
+# --- КОНФІГУРАЦІЯ (з Secrets) ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 URL_SITE = "https://poweron.loe.lviv.ua"
@@ -24,7 +24,7 @@ def save_memory(data):
         f.write(data)
 
 def is_last_message_text():
-    """Перевіряє нові повідомлення та зміщує offset"""
+    """Перевіряє нові повідомлення в Telegram"""
     try:
         url = f"https://api.telegram.org{TOKEN}/getUpdates?offset=-1"
         res = requests.get(url).json()
@@ -41,7 +41,7 @@ def is_last_message_text():
 
 def clear_chat_fast():
     """Ваш метод: надсилає крапку і видаляє 5 повідомлень вгору"""
-    print("🧹 Очищення чату (метод clear_chat_fast)...")
+    print("🧹 Очищення чату перед оновленням...")
     try:
         r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", 
                          data={'chat_id': CHAT_ID, 'text': '.'}).json()
@@ -50,8 +50,8 @@ def clear_chat_fast():
             for i in range(last_id, last_id - 5, -1):
                 requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", 
                              data={'chat_id': CHAT_ID, 'message_id': i})
-    except Exception as e:
-        print(f"⚠️ Помилка очищення: {e}")
+    except:
+        pass
 
 def check_and_update():
     last_memory = get_last_memory()
@@ -74,33 +74,40 @@ def check_and_update():
         current_memory = "|".join(site_times)
 
         if (current_memory != last_memory and current_memory != "") or user_interfered:
-            print(f"🚀 Оновлення! Причина: {'Зміни на сайті' if current_memory != last_memory else 'Текст у чаті'}")
-            
+            print(f"🚀 Зміни знайдено: {current_memory}")
             imgs = driver.find_elements(By.XPATH, "//img[contains(@src, 'api.loe.lviv.ua/media/') and contains(@src, '.png')]")
             date_pattern = r"Графік погодинних відключень на (\d{2}\.\d{2}\.\d{4})"
             found_dates = re.findall(date_pattern, all_text)
             
             if imgs:
-                # Очищуємо чат перед відправкою нових графіків
-                clear_chat_fast()
-                
+                clear_chat_fast() # Видаляємо старе перед відправкою нового
                 for i, img in enumerate(imgs):
                     src = img.get_attribute("src")
                     img_res = requests.get(urljoin(URL_SITE, src))
                     if img_res.status_code == 200:
-                        header = f"📅 <b>Графік на {found_dates[i]}</b>" if i < len(found_dates) else "📅"
+                        header = f"📅 <b>На {found_dates[i]}</b>" if i < len(found_dates) else "📅"
                         cap = f"{header}\n⏱ <i>Станом на {site_times[i] if i < len(site_times) else ''}</i>"
                         requests.post(f"https://api.telegram.org{TOKEN}/sendPhoto", 
                                      data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML'}, 
                                      files={'photo': ('graph.png', io.BytesIO(img_res.content))})
                 
                 save_memory(current_memory)
+                return True
         else:
-            print("✅ Змін немає.")
+            print(f"✅ [{datetime.now().strftime('%H:%M:%S')}] Змін немає.")
     except Exception as e:
         print(f"❌ Помилка: {e}")
     finally:
         if driver: driver.quit()
+    return False
 
 if __name__ == "__main__":
-    check_and_update()
+    # Очищуємо вхідну чергу один раз при старті Action
+    requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset=-1")
+    
+    # 5 циклів по 60 секунд
+    for cycle in range(5):
+        print(f"🌀 Цикл {cycle + 1} з 5...")
+        check_and_update()
+        if cycle < 4:
+            time.sleep(60)
