@@ -2,7 +2,7 @@ name: Update Power Schedule
 
 on:
   schedule:
-    - cron: '*/1 * * * *' # Запуск кожні 1 хв
+    - cron: '*/5 * * * *' # Запуск кожні 1 хв
   workflow_dispatch: # Дозволяє запустити вручну кнопкою
 
 jobs:
