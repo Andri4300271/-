@@ -63,7 +63,12 @@ def check_and_update():
         options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("user-agent=Mozilla/5.0")
+        #options.add_argument("user-agent=Mozilla/5.0")
+        # 📱 Емуляція мобільного телефону
+        # Встановлюємо вузьке вікно (наприклад, 390 пікселів як у iPhone)
+        options.add_argument("--window-size=390,1200") 
+        # Встановлюємо мобільний User-Agent
+        options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
         
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         driver.get(URL_SITE)
