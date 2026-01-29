@@ -2,15 +2,18 @@ name: Update Power Schedule
 
 on:
   schedule:
-    - cron: '*/5 * * * *' # Запуск кожні 1 хв
-  workflow_dispatch: # Дозволяє запустити вручну кнопкою
+    - cron: '*/30 * * * *' # Запуск кожні 30 хвилин
+  workflow_dispatch:      # Кнопка для ручного запуску
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write     # ВАЖЛИВО: Дозвіл на запис файлів у репозиторій
+    
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -19,10 +22,19 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
+          pip install requests selenium webdriver-manager
 
       - name: Run script
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python script.py
+
+      - name: Commit and push if changed
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add last_memory.txt
+          # Комітимо тільки якщо файл змінився, щоб не було помилок
+          git commit -m "Update last_memory: $(date)" || echo "No changes to commit"
+          git push
