@@ -115,4 +115,4 @@ if __name__ == "__main__":
         print(f"🌀 Цикл {cycle + 1} з 5...")
         check_and_update()
         if cycle < 4:
-            time.sleep(60)
+            time.sleep(120)
