@@ -161,7 +161,7 @@ def check_and_update():
 if __name__ == "__main__":
     requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset=-1")
     for cycle in range(5):
-        print(f"🌀 Цикл {cycle + 1} з 5...")
+        print(f"🌀 Цикл {cycle + 1} з 1...")
         check_and_update()
-        if cycle < 4:
+        if cycle < 0:
             time.sleep(120)
