@@ -14,7 +14,7 @@ URL_SITE = "https://poweron.loe.lviv.ua"
 MEMORY_FILE = "last_memory.txt"
 
 def load_memory():
-    """Завантажує час оновлення та обрану групу"""
+    """Завантажує історію: час сайту та збережену групу"""
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
@@ -23,23 +23,24 @@ def load_memory():
     return {"last_time": "", "group": ""}
 
 def save_memory(last_time, group):
-    """Зберігає все в один файл JSON"""
+    """Зберігає дані в JSON"""
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump({"last_time": last_time, "group": group}, f, ensure_ascii=False)
 
 def calculate_duration(start, end):
-    """Рахує тривалість відключення"""
+    """Обчислює різницю часу (напр. 3 год. 30 хв.)"""
     try:
         fmt = "%H:%M"
-        tdelta = datetime.strptime(end, fmt) - datetime.strptime(start, fmt)
-        s = tdelta.total_seconds()
+        t1, t2 = datetime.strptime(start, fmt), datetime.strptime(end, fmt)
+        diff = t2 - t1
+        s = diff.total_seconds()
         return f"{int(s // 3600)} год. {int((s % 3600) // 60)} хв."
     except: return ""
 
 def extract_group_info(text_block, group):
-    """Шукає статус групи та формує текст"""
+    """Шукає статус збереженої групи у блоці тексту"""
     if not group: return ""
-    # Пошук блоку групи (напр. "Група 2.1.")
+    # Шукаємо "Група X.X." (з крапкою)
     pattern = rf"Група {group}\.(.*?)(?=Група \d\.\d|$)"
     match = re.search(pattern, text_block, re.DOTALL)
     if match:
@@ -47,7 +48,7 @@ def extract_group_info(text_block, group):
         if "Електроенергія є." in content:
             return "\n✅ Електроенергія є."
         
-        # Пошук "Електроенергії немає з 10:30 до 14:00."
+        # Шукаємо "Електроенергії немає з 10:30 до 14:00."
         time_match = re.search(r"немає з (\d{2}:\d{2}) до (\d{2}:\d{2})", content)
         if time_match:
             s, e = time_match.groups()
@@ -57,23 +58,28 @@ def extract_group_info(text_block, group):
 
 def check_and_update():
     memory = load_memory()
-    last_time = memory.get("last_time", "")
-    current_group = memory.get("group", "")
+    last_site_time = memory.get("last_time", "")
+    current_group = memory.get("group", "") # Група тепер завжди підтягується з пам'яті
     
     user_interfered = False
-    # 1. Перевірка команд в Telegram (/2.1 тощо)
+    # Перевірка нових повідомлень (зміна групи або просто запит)
     try:
         res = requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset=-1").json()
         if res.get('result'):
             upd = res['result'][-1]
             msg = upd.get('message', {}).get('text', '')
+            update_id = upd['update_id']
+            
+            # Якщо ввели /2.1 — оновлюємо групу в пам'яті
             cmd = re.search(r"/(\d\.\d)", msg)
             if cmd:
                 current_group = cmd.group(1)
                 user_interfered = True
             elif msg and 'photo' not in upd.get('message', {}):
                 user_interfered = True
-            requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={upd['update_id'] + 1}")
+                
+            # Скидаємо чергу повідомлень
+            requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={update_id + 1}")
     except: pass
 
     driver = None
@@ -89,17 +95,18 @@ def check_and_update():
         time.sleep(15) 
         
         full_text = driver.find_element(By.TAG_NAME, "body").text
-        site_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
-        new_time_str = "|".join(site_times)
+        found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
+        new_site_time = "|".join(found_times)
 
-        if (new_time_str != last_time and new_time_str != "") or user_interfered:
-            # Фільтруємо картинки формату *_GPV-mobile.png
+        # Умова оновлення: змінився час на сайті АБО була команда від юзера
+        if (new_site_time != last_site_time and new_site_time != "") or user_interfered:
             imgs = driver.find_elements(By.XPATH, "//img[contains(@src, '_GPV-mobile.png')]")
             dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
+            # Ділимо текст на блоки по датах
             blocks = re.split(r"Графік погодинних відключень на", full_text)[1:]
 
             if imgs:
-                # Очищення чату
+                # Очищення чату (ваша логіка)
                 try:
                     r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
                     mid = r.get('result', {}).get('message_id')
@@ -110,19 +117,24 @@ def check_and_update():
 
                 for i, img in enumerate(imgs):
                     src = img.get_attribute("src")
-                    # Отримуємо статус групи для конкретного дня (блоку тексту)
-                    group_note = extract_group_info(blocks[i], current_group) if i < len(blocks) else ""
+                    # Якщо група збережена в пам'яті, шукаємо її статус для кожного графіка
+                    group_info = extract_group_info(blocks[i], current_group) if i < len(blocks) else ""
                     
                     header = f"📅 <b>На {dates[i]}</b>" if i < len(dates) else "📅"
-                    cap = f"{header}\n⏱ <i>Станом на {site_times[i] if i < len(site_times) else ''}</i>{group_note}"
+                    # Якщо група є, додаємо її номер у заголовок для наочності
+                    group_label = f" (Група {current_group})" if current_group else ""
+                    
+                    cap = f"{header}{group_label}\n⏱ <i>Станом на {found_times[i] if i < len(found_times) else ''}</i>{group_info}"
                     
                     img_data = requests.get(urljoin(URL_SITE, src)).content
                     requests.post(f"https://api.telegram.org{TOKEN}/sendPhoto", 
                                  data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML'}, 
                                  files={'photo': ('graph.png', io.BytesIO(img_data))})
                 
-                save_memory(new_time_str, current_group)
+                save_memory(new_site_time, current_group)
                 return True
+        else:
+            print(f"✅ [{datetime.now().strftime('%H:%M:%S')}] Змін немає. Група в пам'яті: {current_group}")
     except Exception as e:
         print(f"❌ Помилка: {e}")
     finally:
@@ -131,6 +143,5 @@ def check_and_update():
 
 if __name__ == "__main__":
     for cycle in range(5):
-        print(f"🌀 Цикл {cycle + 1}...")
         check_and_update()
         if cycle < 4: time.sleep(120)
