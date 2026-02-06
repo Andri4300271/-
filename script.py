@@ -122,7 +122,7 @@ def check_and_update():
                     
                     header = f"📅 <b>{dates[i]}</b>" if i < len(dates) else "📅"
                     # Якщо група є, додаємо її номер у заголовок для наочності
-                    group_label = f" для групи {current_group}" if current_group else ""
+                    group_label = f" група {current_group}" if current_group else ""
                     
                     cap = f"{header}{group_label}\n⏱ <i>Станом на {found_times[i] if i < len(found_times) else ''}</i>{group_info}"
                     
