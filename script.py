@@ -120,7 +120,7 @@ def check_and_update():
                     # Якщо група збережена в пам'яті, шукаємо її статус для кожного графіка
                     group_info = extract_group_info(blocks[i], current_group) if i < len(blocks) else ""
                     
-                    header = f"📅 <b>На {dates[i]}</b>" if i < len(dates) else "📅"
+                    header = f"📅 <b>{dates[i]}</b>" if i < len(dates) else "📅"
                     # Якщо група є, додаємо її номер у заголовок для наочності
                     group_label = f" для групи {current_group}" if current_group else ""
                     
