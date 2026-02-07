@@ -24,11 +24,8 @@ def load_memory():
 def save_memory(last_time, group, msg_ids, last_imgs, last_hours):
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump({
-            "last_time": last_time, 
-            "group": group, 
-            "msg_ids": msg_ids, 
-            "last_imgs": last_imgs,
-            "last_hours": last_hours
+            "last_time": last_time, "group": group, 
+            "msg_ids": msg_ids, "last_imgs": last_imgs, "last_hours": last_hours
         }, f, ensure_ascii=False)
 
 def calculate_duration(start, end):
@@ -58,22 +55,6 @@ def extract_group_info(text_block, group):
             return "\n".join(res_lines)
     return ""
 
-def clear_chat_5(msg_ids):
-    """Видаляє збережені графіки та 5 останніх повідомлень у чаті"""
-    try:
-        # Видаляємо всі повідомлення графіків, які ми пам'ятаємо
-        for mid in msg_ids:
-            requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
-        
-        # Відправляємо тимчасову точку, щоб знайти актуальний кінець чату
-        r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
-        last_id = r.get('result', {}).get('message_id')
-        if last_id:
-            # Видаляємо крапку + 5 повідомлень вгору (разом 6)
-            for i in range(last_id, last_id - 6, -1):
-                requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
-    except: pass
-
 def check_and_update():
     mem = load_memory()
     last_site_time = mem.get("last_time", "")
@@ -88,13 +69,13 @@ def check_and_update():
         if res.get('result'):
             upd = res['result'][-1]
             msg = upd.get('message', {}).get('text', '')
+            update_id = upd['update_id']
             cmd = re.search(r"/(\d\.\d)", msg)
             if cmd:
                 current_group = cmd.group(1)
                 user_interfered = True
-            elif msg and 'photo' not in upd.get('message', {}):
-                user_interfered = True
-            requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={upd['update_id'] + 1}")
+            elif msg: user_interfered = True
+            requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={update_id + 1}")
     except: pass
 
     driver = None
@@ -112,7 +93,6 @@ def check_and_update():
         full_text = driver.find_element(By.TAG_NAME, "body").text
         found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
         new_site_time = "|".join(found_times)
-        
         imgs_elements = driver.find_elements(By.XPATH, "//img[contains(@src, '_GPV-mobile.png')]")
         current_imgs = [img.get_attribute("src") for img in imgs_elements]
         dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
@@ -120,57 +100,52 @@ def check_and_update():
 
         if (new_site_time != last_site_time and new_site_time != "") or user_interfered:
             current_hours = [extract_group_info(b, current_group) for b in blocks]
-            
-            # Якщо змінився розклад (години) або була команда - робимо повну зачистку
-            if current_hours != last_hours or user_interfered:
-                clear_chat_5(msg_ids)
-                msg_ids = [] # Очищаємо список ID для повної перевідправки
-            
             new_msg_ids = []
-            new_last_imgs = []
-
-            for i in range(len(current_imgs)):
-                info = current_hours[i] if i < len(current_hours) else ""
-                header = f"📅 <b>{dates[i]}</b>" if i < len(dates) else "📅"
-                cap = f"{header} група {current_group}\n⏱ <i>Станом на {found_times[i] if i < len(found_times) else ''}</i>\n{info}"
-                img_url = current_imgs[i]
-
-                is_existing = i < len(msg_ids)
-                img_changed = is_existing and (img_url != last_imgs[i])
-
-                # Надсилаємо нове фото, якщо: повідомлення ще немає, змінилась картинка/дата або змінились години
-                if not is_existing or img_changed:
-                    if is_existing: # Видаляємо старий варіант цього конкретного графіка
-                        requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': msg_ids[i]})
-                    
-                    img_data = requests.get(urljoin(URL_SITE, img_url)).content
-                    r = requests.post(f"https://api.telegram.org{TOKEN}/sendPhoto", 
-                                     data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML'}, 
-                                     files={'photo': ('g.png', io.BytesIO(img_data))}).json()
-                    
-                    new_mid = r.get('result', {}).get('message_id')
-                    if is_existing:
-                        msg_ids[i] = new_mid if new_mid else msg_ids[i]
-                    else:
-                        if new_mid: msg_ids.append(new_mid)
-                else:
-                    # Якщо змінився тільки час "станом на" — просто редагуємо підпис
-                    requests.post(f"https://api.telegram.org{TOKEN}/editMessageCaption", 
-                                 data={'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'caption': cap, 'parse_mode': 'HTML'})
-                
-                new_last_imgs.append(img_url)
-
-            # Видаляємо зайві графіки, якщо їх стало менше
+            
+            # Якщо графіків стало менше — видаляємо зайві повідомлення
             if len(msg_ids) > len(current_imgs):
                 for j in range(len(current_imgs), len(msg_ids)):
                     requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': msg_ids[j]})
                 msg_ids = msg_ids[:len(current_imgs)]
 
-            save_memory(new_site_time, current_group, msg_ids, new_last_imgs, current_hours)
+            for i in range(len(current_imgs)):
+                info = current_hours[i] if i < len(current_hours) else ""
+                header = f"📅 <b>{dates[i]}</b>" if i < len(dates) else "📅"
+                cap = f"{header} група {current_group}\n⏱ <i>Станом на {found_times[i] if i < len(found_times) else ''}</i>\n{info}"
+                
+                is_new_day = i >= len(msg_ids)
+                hours_changed = not is_new_day and (current_hours[i] != last_hours[i])
+                img_changed = not is_new_day and (current_imgs[i] != last_imgs[i])
+
+                # Логіка звуку: звук, якщо новий день АБО змінився розклад годин
+                silent = not (is_new_day or hours_changed)
+
+                if is_new_day or img_changed or hours_changed or user_interfered:
+                    # Видаляємо старе перед надсиланням нового (якщо це заміна)
+                    if not is_new_day:
+                        requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': msg_ids[i]})
+                    
+                    img_data = requests.get(urljoin(URL_SITE, current_imgs[i])).content
+                    r = requests.post(f"https://api.telegram.org{TOKEN}/sendPhoto", 
+                                     data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML', 'disable_notification': silent}, 
+                                     files={'photo': ('graph.png', io.BytesIO(img_data))}).json()
+                    
+                    mid = r.get('result', {}).get('message_id')
+                    if is_new_day: new_msg_ids.append(mid)
+                    else: msg_ids[i] = mid
+                else:
+                    # Тільки оновлення тексту (тихо)
+                    requests.post(f"https://api.telegram.org{TOKEN}/editMessageCaption", 
+                                 data={'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'caption': cap, 'parse_mode': 'HTML'})
+            
+            final_msg_ids = msg_ids + new_msg_ids
+            save_memory(new_site_time, current_group, final_msg_ids, current_imgs, current_hours)
+            return True
     except Exception as e:
         print(f"❌ Помилка: {e}")
     finally:
         if driver: driver.quit()
+    return False
 
 if __name__ == "__main__":
     for cycle in range(5):
