@@ -1,1 +1,1 @@
-{"last_time": "12:49", "group": "3.2"}
+{"last_time": "12:49", "group": "3.2", "msg_ids": [628], "last_imgs": ["https://api.loe.lviv.ua/media/698718c0a1535_GPV-mobile.png"], "last_hours": ["⚠️ <b>Планове відключення:</b>\n06:00 - 11:00   (5 г. 0 х.)\n14:30 - 18:00   (3 г. 30 х.)\n21:30 - 24:00   (2 г. 30 х.)"]}
