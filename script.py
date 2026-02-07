@@ -28,13 +28,13 @@ def save_memory(last_time, group):
         json.dump({"last_time": last_time, "group": group}, f, ensure_ascii=False)
 
 def calculate_duration(start, end):
-    """Обчислює різницю часу (напр. 3 год. 30 хв.)"""
+    """Обчислює різницю часу (напр. 3 г. 30 х.)"""
     try:
         fmt = "%H:%M"
         t1, t2 = datetime.strptime(start, fmt), datetime.strptime(end, fmt)
         diff = t2 - t1
         s = diff.total_seconds()
-        return f"{int(s // 3600)} год. {int((s % 3600) // 60)} хв."
+        return f"{int(s // 3600)} г. {int((s % 3600) // 60)} х."
     except: return ""
 
 def extract_group_info(text_block, group):
