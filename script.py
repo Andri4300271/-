@@ -51,7 +51,7 @@ def extract_group_info(text_block, group):
         if all_periods:
             res_lines = ["⚠️ <b>Планове відключення:</b>"]
             for s, e in all_periods:
-                res_lines.append(f"  {s} - {e}   ({calculate_duration(s, e)})")
+                res_lines.append(f"   {s} - {e}   ({calculate_duration(s, e)})")
             return "\n".join(res_lines)
     return ""
 
