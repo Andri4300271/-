@@ -46,12 +46,12 @@ def extract_group_info(text_block, group):
     if match:
         content = match.group(1).strip()
         if "Електроенергія є." in content and "немає" not in content:
-            return "✅ Електроенергія є."
+            return "✅ <b>Електроенергія є.</b>"
         all_periods = re.findall(r"(\d{2}:\d{2}) до (\d{2}:\d{2})", content)
         if all_periods:
             res_lines = ["⚠️ <b>Планове відключення:</b>"]
             for s, e in all_periods:
-                res_lines.append(f"{s} - {e}   ({calculate_duration(s, e)})")
+                res_lines.append(f"  {s} - {e}   ({calculate_duration(s, e)})")
             return "\n".join(res_lines)
     return ""
 
