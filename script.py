@@ -51,9 +51,19 @@ def extract_group_info(text_block, group):
         if all_periods:
             res_lines = ["⚠️ <b>Планове відключення:</b>"]
             for s, e in all_periods:
-                res_lines.append(f"   {s} - {e}   ({calculate_duration(s, e)})")
+                res_lines.append(f"   <b>{s} - {e}</b>   ({calculate_duration(s, e)})")
             return "\n".join(res_lines)
     return ""
+
+def clear_chat_5():
+    """Видаляє 5 останніх повідомлень у чаті (напр. команди юзера)"""
+    try:
+        r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
+        last_id = r.get('result', {}).get('message_id')
+        if last_id:
+            for i in range(last_id, last_id - 6, -1):
+                requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
+    except: pass
 
 def check_and_update():
     mem = load_memory()
@@ -74,7 +84,8 @@ def check_and_update():
             if cmd:
                 current_group = cmd.group(1)
                 user_interfered = True
-            elif msg: user_interfered = True
+            elif msg and 'photo' not in upd.get('message', {}):
+                user_interfered = True
             requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={update_id + 1}")
     except: pass
 
@@ -100,14 +111,18 @@ def check_and_update():
 
         if (new_site_time != last_site_time and new_site_time != "") or user_interfered:
             current_hours = [extract_group_info(b, current_group) for b in blocks]
-            new_msg_ids = []
             
-            # Якщо графіків стало менше — видаляємо зайві повідомлення
+            # Очищення повідомлень юзера при втручанні
+            if user_interfered:
+                clear_chat_5()
+
+            # Видалення застарілих повідомлень, якщо графіків стало менше
             if len(msg_ids) > len(current_imgs):
                 for j in range(len(current_imgs), len(msg_ids)):
                     requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': msg_ids[j]})
                 msg_ids = msg_ids[:len(current_imgs)]
 
+            new_msg_ids = []
             for i in range(len(current_imgs)):
                 info = current_hours[i] if i < len(current_hours) else ""
                 header = f"📅 <b>{dates[i]}</b>" if i < len(dates) else "📅"
@@ -117,11 +132,10 @@ def check_and_update():
                 hours_changed = not is_new_day and (current_hours[i] != last_hours[i])
                 img_changed = not is_new_day and (current_imgs[i] != last_imgs[i])
 
-                # Логіка звуку: звук, якщо новий день АБО змінився розклад годин
+                # Звук лише при новому дні або зміні годин
                 silent = not (is_new_day or hours_changed)
 
                 if is_new_day or img_changed or hours_changed or user_interfered:
-                    # Видаляємо старе перед надсиланням нового (якщо це заміна)
                     if not is_new_day:
                         requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': msg_ids[i]})
                     
@@ -134,12 +148,11 @@ def check_and_update():
                     if is_new_day: new_msg_ids.append(mid)
                     else: msg_ids[i] = mid
                 else:
-                    # Тільки оновлення тексту (тихо)
+                    # Редагування старого повідомлення (тихо)
                     requests.post(f"https://api.telegram.org{TOKEN}/editMessageCaption", 
                                  data={'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'caption': cap, 'parse_mode': 'HTML'})
             
-            final_msg_ids = msg_ids + new_msg_ids
-            save_memory(new_site_time, current_group, final_msg_ids, current_imgs, current_hours)
+            save_memory(new_site_time, current_group, msg_ids + new_msg_ids, current_imgs, current_hours)
             return True
     except Exception as e:
         print(f"❌ Помилка: {e}")
