@@ -59,7 +59,7 @@ def extract_group_info(text_block, group):
                     res_lines.append(f"       💡  <i>{light_dur}</i>")
                 
                 dur = calculate_duration(s, e)
-                res_lines.append(f"<b>{s} - {e}</b>   ({dur})")
+                res_lines.append(f"   <b>{s} - {e}</b>   ({dur})")
                 prev_end = e
             return "\n".join(res_lines)
     return ""
