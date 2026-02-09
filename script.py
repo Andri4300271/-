@@ -35,6 +35,7 @@ def calculate_duration(start, end):
         t1, t2 = datetime.strptime(start, fmt), datetime.strptime(end_proc, fmt)
         diff = t2 - t1
         s = diff.total_seconds()
+        # Якщо end було 24:00, ми втратили 1 хвилину при перетворенні на 23:59
         if end == "24:00": s += 60
         return f"{int(s // 3600)} г. {int((s % 3600) // 60)} х."
     except: return ""
@@ -46,17 +47,24 @@ def extract_group_info(text_block, group):
     if match:
         content = match.group(1).strip()
         if "Електроенергія є." in content and "немає" not in content:
-            return "✅ <b>Електроенергія є.</b>"
+            return "✅ Електроенергія є."
+        
         all_periods = re.findall(r"(\d{2}:\d{2}) до (\d{2}:\d{2})", content)
         if all_periods:
             res_lines = ["⚠️ <b>Планове відключення:</b>"]
+            prev_end = None
             for s, e in all_periods:
-                res_lines.append(f"   <b>{s} - {e}</b>   ({calculate_duration(s, e)})")
+                if prev_end:
+                    light_dur = calculate_duration(prev_end, s)
+                    res_lines.append(f"└─ 💡 <i>є {light_dur}</i>")
+                
+                dur = calculate_duration(s, e)
+                res_lines.append(f"<b>{s} - {e}</b>   ({dur})")
+                prev_end = e
             return "\n".join(res_lines)
     return ""
 
 def clear_chat_5():
-    """Видаляє 5 останніх повідомлень у чаті (напр. команди юзера)"""
     try:
         r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
         last_id = r.get('result', {}).get('message_id')
@@ -112,11 +120,9 @@ def check_and_update():
         if (new_site_time != last_site_time and new_site_time != "") or user_interfered:
             current_hours = [extract_group_info(b, current_group) for b in blocks]
             
-            # Очищення повідомлень юзера при втручанні
             if user_interfered:
                 clear_chat_5()
 
-            # Видалення застарілих повідомлень, якщо графіків стало менше
             if len(msg_ids) > len(current_imgs):
                 for j in range(len(current_imgs), len(msg_ids)):
                     requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': msg_ids[j]})
@@ -132,7 +138,6 @@ def check_and_update():
                 hours_changed = not is_new_day and (current_hours[i] != last_hours[i])
                 img_changed = not is_new_day and (current_imgs[i] != last_imgs[i])
 
-                # Звук лише при новому дні або зміні годин
                 silent = not (is_new_day or hours_changed)
 
                 if is_new_day or img_changed or hours_changed or user_interfered:
@@ -148,7 +153,6 @@ def check_and_update():
                     if is_new_day: new_msg_ids.append(mid)
                     else: msg_ids[i] = mid
                 else:
-                    # Редагування старого повідомлення (тихо)
                     requests.post(f"https://api.telegram.org{TOKEN}/editMessageCaption", 
                                  data={'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'caption': cap, 'parse_mode': 'HTML'})
             
