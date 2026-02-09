@@ -56,7 +56,7 @@ def extract_group_info(text_block, group):
             for s, e in all_periods:
                 if prev_end:
                     light_dur = calculate_duration(prev_end, s)
-                    res_lines.append(f"└─ 💡 <i> {light_dur}</i>")
+                    res_lines.append(f"   💡 <i> {light_dur}</i>")
                 
                 dur = calculate_duration(s, e)
                 res_lines.append(f"<b>{s} - {e}</b>   ({dur})")
