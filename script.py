@@ -157,7 +157,7 @@ def check_and_update():
             sound_needed = user_interfered or schedule_changed or new_graph
 
             if should_full_reset:
-                clear_chat_5(msg_ids)
+                #clear_chat_5(msg_ids)
                 new_mids = []
                 for i in range(len(current_imgs)):
                     cap = f"📅 <b>{current_dates[i]}</b> група {current_group}\n⏱ <i>Станом на {found_times[i] if i<len(found_times) else ''}</i>\n{new_hours_texts[i]}"
