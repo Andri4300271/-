@@ -40,21 +40,22 @@ def calculate_duration(start, end):
     except: return ""
 
 def format_row(s, e, dur, old_rows):
-    """Формує рядок. Підкреслює зміни тільки якщо ця дата вже була в пам'яті."""
-    if not old_rows: # Новий графік (нова дата) - нічого не підкреслюємо
+    """Підкреслює ТІЛЬКИ години відключення, якщо вони змінилися."""
+    if not old_rows: 
         return f"   <b>{s} - {e}</b>   ({dur})"
     
-    s_disp, e_disp, d_disp = s, e, dur
+    s_disp, e_disp = s, e
+    # Перевіряємо чи є такий точний період
     exact_match = any(row['start'] == s and row['end'] == e for row in old_rows)
     
     if not exact_match:
         start_exists = any(row['start'] == s for row in old_rows)
         if start_exists:
-            e_disp, d_disp = f"<u>{e}</u>", f"<u>{dur}</u>"
+            e_disp = f"<u>{e}</u>"
         else:
-            s_disp, e_disp, d_disp = f"<u>{s}</u>", f"<u>{e}</u>", f"<u>{dur}</u>"
+            s_disp, e_disp = f"<u>{s}</u>", f"<u>{e}</u>"
             
-    return f"   <b>{s_disp} - {e_disp}</b>   ({d_disp})"
+    return f"   <b>{s_disp} - {e_disp}</b>   ({dur})"
 
 def extract_group_info(text_block, group, old_rows=None):
     if not group: return "", []
@@ -77,11 +78,8 @@ def extract_group_info(text_block, group, old_rows=None):
             for p in current_periods:
                 s, e, dur = p['start'], p['end'], p['dur']
                 if prev_end:
-                    l_dur = calculate_duration(prev_end, s)
-                    # Світло підкреслюємо, якщо такий проміжок світла новий для цієї дати
-                    light_match = any(calculate_duration(r.get('end',''), s) == l_dur for r in (old_rows or []) if r.get('end') == prev_end)
-                    l_disp = l_dur if light_match or not old_rows else f"<u>{l_dur}</u>"
-                    res_lines.append(f"          💡  <i>{l_disp}</i>")
+                    light_dur = calculate_duration(prev_end, s)
+                    res_lines.append(f"          💡  <i>{light_dur}</i>")
                 
                 res_lines.append(format_row(s, e, dur, old_rows))
                 prev_end = e
@@ -93,8 +91,7 @@ def clear_chat_5(msg_ids):
         for mid in msg_ids:
             requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
         r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
-        last_id = r.get('result', {}).get('result', {}).get('message_id') if 'result' in r else None
-        if not last_id: last_id = r.get('result', {}).get('message_id')
+        last_id = r.get('result', {}).get('message_id')
         if last_id:
             for i in range(last_id, last_id - 6, -1):
                 requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
@@ -113,8 +110,14 @@ def check_and_update():
             upd = res['result'][-1]
             msg = upd.get('message', {}).get('text', '')
             cmd = re.search(r"/(\d\.\d)", msg)
-            if cmd: current_group = cmd.group(1); user_interfered = True
-            elif msg and 'photo' not in upd.get('message', {}): user_interfered = True
+            if cmd:
+                new_group = cmd.group(1)
+                if new_group != current_group:
+                    current_group = new_group
+                    hours_by_date = {} # Очищаємо історію розкладу при зміні групи
+                user_interfered = True
+            elif msg and 'photo' not in upd.get('message', {}):
+                user_interfered = True
             requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={upd['update_id'] + 1}")
     except: pass
 
@@ -141,15 +144,12 @@ def check_and_update():
             new_hours_texts, new_hours_data_map = [], {}
             for i, b in enumerate(blocks):
                 date_str = current_dates[i]
-                # Отримуємо старі дані саме для цієї дати
                 old_d = hours_by_date.get(date_str)
                 txt, dat = extract_group_info(b, current_group, old_d)
                 new_hours_texts.append(txt)
                 new_hours_data_map[date_str] = dat
 
-            # Логіка оновлень
             new_graph = any(d not in last_dates for d in current_dates)
-            # Перевіряємо чи змінився розклад хоча б для однієї існуючої дати
             schedule_changed = any(new_hours_data_map.get(d) != hours_by_date.get(d) for d in current_dates if d in hours_by_date)
             time_only_changed = new_site_time != last_site_time and not schedule_changed and not new_graph
             
@@ -170,7 +170,6 @@ def check_and_update():
                 save_memory(new_site_time, current_group, new_mids, current_imgs, new_hours_data_map, current_dates)
                 return True
             
-            # Якщо графік зник (перший), а змін немає - просто видаляємо зайве
             elif len(msg_ids) > len(current_imgs):
                 for _ in range(len(msg_ids) - len(current_imgs)):
                     mid = msg_ids.pop(0)
