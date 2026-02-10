@@ -19,13 +19,13 @@ def load_memory():
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except: pass
-    return {"last_time": "", "group": "", "msg_ids": [], "last_imgs": [], "last_hours": []}
+    return {"last_time": "", "group": "", "msg_ids": [], "last_imgs": [], "hours_by_date": {}, "last_dates": []}
 
-def save_memory(last_time, group, msg_ids, last_imgs, last_hours):
+def save_memory(last_time, group, msg_ids, last_imgs, hours_by_date, last_dates):
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump({
-            "last_time": last_time, "group": group, 
-            "msg_ids": msg_ids, "last_imgs": last_imgs, "last_hours": last_hours
+            "last_time": last_time, "group": group, "msg_ids": msg_ids, 
+            "last_imgs": last_imgs, "hours_by_date": hours_by_date, "last_dates": last_dates
         }, f, ensure_ascii=False)
 
 def calculate_duration(start, end):
@@ -35,39 +35,66 @@ def calculate_duration(start, end):
         t1, t2 = datetime.strptime(start, fmt), datetime.strptime(end_proc, fmt)
         diff = t2 - t1
         s = diff.total_seconds()
-        # Якщо end було 24:00, ми втратили 1 хвилину при перетворенні на 23:59
         if end == "24:00": s += 60
         return f"{int(s // 3600)} г. {int((s % 3600) // 60)} х."
     except: return ""
 
-def extract_group_info(text_block, group):
-    if not group: return ""
+def format_row(s, e, dur, old_rows):
+    """Формує рядок. Підкреслює зміни тільки якщо ця дата вже була в пам'яті."""
+    if not old_rows: # Новий графік (нова дата) - нічого не підкреслюємо
+        return f"   <b>{s} - {e}</b>   ({dur})"
+    
+    s_disp, e_disp, d_disp = s, e, dur
+    exact_match = any(row['start'] == s and row['end'] == e for row in old_rows)
+    
+    if not exact_match:
+        start_exists = any(row['start'] == s for row in old_rows)
+        if start_exists:
+            e_disp, d_disp = f"<u>{e}</u>", f"<u>{dur}</u>"
+        else:
+            s_disp, e_disp, d_disp = f"<u>{s}</u>", f"<u>{e}</u>", f"<u>{dur}</u>"
+            
+    return f"   <b>{s_disp} - {e_disp}</b>   ({d_disp})"
+
+def extract_group_info(text_block, group, old_rows=None):
+    if not group: return "", []
     pattern = rf"Група {group}\.(.*?)(?=Група \d\.\d|$)"
     match = re.search(pattern, text_block, re.DOTALL)
+    
+    current_periods = []
     if match:
         content = match.group(1).strip()
         if "Електроенергія є." in content and "немає" not in content:
-            return "✅ <b>Електроенергія є.</b>"
+            return "✅ <b>Електроенергія є.</b>", []
         
-        all_periods = re.findall(r"(\d{2}:\d{2}) до (\d{2}:\d{2})", content)
-        if all_periods:
+        all_matches = re.findall(r"(\d{2}:\d{2}) до (\d{2}:\d{2})", content)
+        for s, e in all_matches:
+            current_periods.append({"start": s, "end": e, "dur": calculate_duration(s, e)})
+
+        if current_periods:
             res_lines = ["⚠️ <b>Планове відключення:</b>"]
             prev_end = None
-            for s, e in all_periods:
+            for p in current_periods:
+                s, e, dur = p['start'], p['end'], p['dur']
                 if prev_end:
-                    light_dur = calculate_duration(prev_end, s)
-                    res_lines.append(f"          💡  <i>{light_dur}</i>")
+                    l_dur = calculate_duration(prev_end, s)
+                    # Світло підкреслюємо, якщо такий проміжок світла новий для цієї дати
+                    light_match = any(calculate_duration(r.get('end',''), s) == l_dur for r in (old_rows or []) if r.get('end') == prev_end)
+                    l_disp = l_dur if light_match or not old_rows else f"<u>{l_dur}</u>"
+                    res_lines.append(f"          💡  <i>{l_disp}</i>")
                 
-                dur = calculate_duration(s, e)
-                res_lines.append(f"   <b>{s} - {e}</b>   ({dur})")
+                res_lines.append(format_row(s, e, dur, old_rows))
                 prev_end = e
-            return "\n".join(res_lines)
-    return ""
+            return "\n".join(res_lines), current_periods
+    return "", []
 
-def clear_chat_5():
+def clear_chat_5(msg_ids):
     try:
+        for mid in msg_ids:
+            requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
         r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
-        last_id = r.get('result', {}).get('message_id')
+        last_id = r.get('result', {}).get('result', {}).get('message_id') if 'result' in r else None
+        if not last_id: last_id = r.get('result', {}).get('message_id')
         if last_id:
             for i in range(last_id, last_id - 6, -1):
                 requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
@@ -75,11 +102,9 @@ def clear_chat_5():
 
 def check_and_update():
     mem = load_memory()
-    last_site_time = mem.get("last_time", "")
-    current_group = mem.get("group", "")
-    msg_ids = mem.get("msg_ids", [])
-    last_imgs = mem.get("last_imgs", [])
-    last_hours = mem.get("last_hours", [])
+    last_site_time, current_group = mem.get("last_time", ""), mem.get("group", "")
+    msg_ids, last_imgs = mem.get("msg_ids", []), mem.get("last_imgs", [])
+    hours_by_date, last_dates = mem.get("hours_by_date", {}), mem.get("last_dates", [])
     
     user_interfered = False
     try:
@@ -87,14 +112,10 @@ def check_and_update():
         if res.get('result'):
             upd = res['result'][-1]
             msg = upd.get('message', {}).get('text', '')
-            update_id = upd['update_id']
             cmd = re.search(r"/(\d\.\d)", msg)
-            if cmd:
-                current_group = cmd.group(1)
-                user_interfered = True
-            elif msg and 'photo' not in upd.get('message', {}):
-                user_interfered = True
-            requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={update_id + 1}")
+            if cmd: current_group = cmd.group(1); user_interfered = True
+            elif msg and 'photo' not in upd.get('message', {}): user_interfered = True
+            requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={upd['update_id'] + 1}")
     except: pass
 
     driver = None
@@ -104,62 +125,59 @@ def check_and_update():
         options.add_argument("--no-sandbox")
         options.add_argument("--window-size=390,1200")
         options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
-        
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         driver.get(URL_SITE)
-        time.sleep(15) 
+        time.sleep(15)
         
         full_text = driver.find_element(By.TAG_NAME, "body").text
         found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
         new_site_time = "|".join(found_times)
         imgs_elements = driver.find_elements(By.XPATH, "//img[contains(@src, '_GPV-mobile.png')]")
         current_imgs = [img.get_attribute("src") for img in imgs_elements]
-        dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
+        current_dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
         blocks = re.split(r"Графік погодинних відключень на", full_text)[1:]
 
         if (new_site_time != last_site_time and new_site_time != "") or user_interfered:
-            current_hours = [extract_group_info(b, current_group) for b in blocks]
+            new_hours_texts, new_hours_data_map = [], {}
+            for i, b in enumerate(blocks):
+                date_str = current_dates[i]
+                # Отримуємо старі дані саме для цієї дати
+                old_d = hours_by_date.get(date_str)
+                txt, dat = extract_group_info(b, current_group, old_d)
+                new_hours_texts.append(txt)
+                new_hours_data_map[date_str] = dat
+
+            # Логіка оновлень
+            new_graph = any(d not in last_dates for d in current_dates)
+            # Перевіряємо чи змінився розклад хоча б для однієї існуючої дати
+            schedule_changed = any(new_hours_data_map.get(d) != hours_by_date.get(d) for d in current_dates if d in hours_by_date)
+            time_only_changed = new_site_time != last_site_time and not schedule_changed and not new_graph
             
-            if user_interfered:
-                clear_chat_5()
+            should_full_reset = user_interfered or schedule_changed or new_graph or time_only_changed
+            sound_needed = user_interfered or schedule_changed or new_graph
 
-            if len(msg_ids) > len(current_imgs):
-                for j in range(len(current_imgs), len(msg_ids)):
-                    requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': msg_ids[j]})
-                msg_ids = msg_ids[:len(current_imgs)]
-
-            new_msg_ids = []
-            for i in range(len(current_imgs)):
-                info = current_hours[i] if i < len(current_hours) else ""
-                header = f"📅 <b>{dates[i]}</b>" if i < len(dates) else "📅"
-                cap = f"{header} група {current_group}\n⏱ <i>Станом на {found_times[i] if i < len(found_times) else ''}</i>\n{info}"
-                
-                is_new_day = i >= len(msg_ids)
-                hours_changed = not is_new_day and (current_hours[i] != last_hours[i])
-                img_changed = not is_new_day and (current_imgs[i] != last_imgs[i])
-
-                silent = not (is_new_day or hours_changed)
-
-                if is_new_day or img_changed or hours_changed or user_interfered:
-                    if not is_new_day:
-                        requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': msg_ids[i]})
-                    
+            if should_full_reset:
+                clear_chat_5(msg_ids)
+                new_mids = []
+                for i in range(len(current_imgs)):
+                    cap = f"📅 <b>{current_dates[i]}</b> група {current_group}\n⏱ <i>Станом на {found_times[i] if i<len(found_times) else ''}</i>\n{new_hours_texts[i]}"
                     img_data = requests.get(urljoin(URL_SITE, current_imgs[i])).content
                     r = requests.post(f"https://api.telegram.org{TOKEN}/sendPhoto", 
-                                     data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML', 'disable_notification': silent}, 
-                                     files={'photo': ('graph.png', io.BytesIO(img_data))}).json()
-                    
+                                     data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML', 'disable_notification': not sound_needed}, 
+                                     files={'photo': ('g.png', io.BytesIO(img_data))}).json()
                     mid = r.get('result', {}).get('message_id')
-                    if is_new_day: new_msg_ids.append(mid)
-                    else: msg_ids[i] = mid
-                else:
-                    requests.post(f"https://api.telegram.org{TOKEN}/editMessageCaption", 
-                                 data={'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'caption': cap, 'parse_mode': 'HTML'})
+                    if mid: new_mids.append(mid)
+                save_memory(new_site_time, current_group, new_mids, current_imgs, new_hours_data_map, current_dates)
+                return True
             
-            save_memory(new_site_time, current_group, msg_ids + new_msg_ids, current_imgs, current_hours)
-            return True
-    except Exception as e:
-        print(f"❌ Помилка: {e}")
+            # Якщо графік зник (перший), а змін немає - просто видаляємо зайве
+            elif len(msg_ids) > len(current_imgs):
+                for _ in range(len(msg_ids) - len(current_imgs)):
+                    mid = msg_ids.pop(0)
+                    requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
+                save_memory(new_site_time, current_group, msg_ids, current_imgs, new_hours_data_map, current_dates)
+
+    except Exception as e: print(f"❌ Помилка: {e}")
     finally:
         if driver: driver.quit()
     return False
