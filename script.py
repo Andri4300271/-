@@ -177,7 +177,7 @@ def check_and_update():
             sound_needed = user_interfered or schedule_changed or new_graph_appeared
 
             if should_full_reset:
-                clear_chat_5(msg_ids) # Повна зачистка
+                ###clear_chat_5(msg_ids) # Повна зачистка
                 new_mids = []
                 for i in range(len(current_imgs)):
                     date_str = current_dates[i]
@@ -207,7 +207,7 @@ def check_and_update():
             elif len(msg_ids) > len(current_imgs):
                 for _ in range(len(msg_ids) - len(current_imgs)):
                     mid = msg_ids.pop(0)
-                    requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
+                    ###requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
                 save_memory(new_site_time, current_group, msg_ids, current_imgs, new_hours_data_map, current_dates)
 
     except Exception as e: print(f"❌ Помилка: {e}")
