@@ -173,7 +173,7 @@ def check_and_update():
             elif len(msg_ids) > len(current_imgs):
                 for _ in range(len(msg_ids) - len(current_imgs)):
                     mid = msg_ids.pop(0)
-                    requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
+                    #requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
                 save_memory(new_site_time, current_group, msg_ids, current_imgs, new_hours_data_map, current_dates)
 
     except Exception as e: print(f"❌ Помилка: {e}")
