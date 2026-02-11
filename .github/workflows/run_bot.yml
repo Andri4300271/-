@@ -27,7 +27,7 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: script.py # ЗАМІНІТЬ НА НАЗВУ ВАШОГО ФАЙЛУ
+        run: script.py# ЗАМІНІТЬ НА НАЗВУ ВАШОГО ФАЙЛУ
 
       - name: Commit and push changes
         run: |
