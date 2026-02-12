@@ -178,7 +178,7 @@ def check_and_update():
         options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         driver.get(URL_SITE)
-        time.sleep(5)
+        time.sleep(15)
         
         full_text = driver.find_element(By.TAG_NAME, "body").text
         found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
@@ -210,7 +210,7 @@ def check_and_update():
             sound_needed = user_interfered or schedule_changed or new_graph
 
             if should_full_reset:
-                ###clear_chat_5(msg_ids)
+                clear_chat_5(msg_ids)
                 print(f"📤 [Дія] Відправка {len(current_imgs)} графіків (Звук: {sound_needed})...")
                 new_mids = []
                 for i in range(len(current_imgs)):
@@ -236,7 +236,7 @@ def check_and_update():
                 print("🗑 [Дія] Видалення застарілого графіка.")
                 for _ in range(len(msg_ids) - len(current_imgs)):
                     mid = msg_ids.pop(0)
-                    ###requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
+                    requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
                 save_memory(new_site_time, current_group, msg_ids, current_imgs, new_hours_data_map, current_dates)
         else: print("✅ [Статус] Змін немає.")
 
