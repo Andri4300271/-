@@ -249,9 +249,9 @@ def check_and_update():
 
 # --- ТОЧКА ВХОДУ ---
 if __name__ == "__main__":
-    for cycle in range(1):
-        print(f"\n--- [Цикл {cycle + 1} з 5] ---")
+    for cycle in range(7):
+        print(f"\n--- [Цикл {cycle + 1} з 7] ---")
         check_and_update()
         if cycle < 4:
             print("⏳ [Очікування] 120 секунд...")
-            ###time.sleep(120)
+            time.sleep(120)
