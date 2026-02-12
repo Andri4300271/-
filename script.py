@@ -254,4 +254,4 @@ if __name__ == "__main__":
         print(f"\n--- [Цикл {cycle + 1}] ---")
         check_and_update()
         if cycle < 4:
-            time.sleep(120)
+            ###time.sleep(120)
