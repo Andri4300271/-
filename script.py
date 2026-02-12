@@ -250,7 +250,7 @@ def check_and_update():
 
 # --- ТОЧКА ВХОДУ ---
 if __name__ == "__main__":
-    for cycle in range(5):
+    for cycle in range(1):
         print(f"\n--- [Цикл {cycle + 1}] ---")
         check_and_update()
         if cycle < 4:
