@@ -252,6 +252,6 @@ if __name__ == "__main__":
     for cycle in range(7):
         print(f"\n--- [Цикл {cycle + 1} з 7] ---")
         check_and_update()
-        if cycle < 4:
+        if cycle < 6:
             print("⏳ [Очікування] 120 секунд...")
             time.sleep(120)
