@@ -1,1 +1,1 @@
-{"last_time": "21:59", "group": "3.2", "msg_ids": [733], "last_imgs": ["https://api.loe.lviv.ua/media/698cdf98c5d6e_GPV-mobile.png"], "hours_by_date": {"12.02.2026": [{"start": "10:00", "end": "13:30", "dur": "3 г. 30 х."}, {"start": "17:00", "end": "22:00", "dur": "5 г. 0 х."}]}, "last_dates": ["12.02.2026"]}
+{"last_time": "08:59", "group": "3.2", "msg_ids": [735], "last_imgs": ["https://api.loe.lviv.ua/media/698d7a3825449_GPV-mobile.png"], "hours_by_date": {"12.02.2026": [{"start": "17:00", "end": "22:00", "dur": "5 г. 0 х."}]}, "last_dates": ["12.02.2026"]}
