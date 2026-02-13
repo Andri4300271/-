@@ -179,7 +179,7 @@ def check_and_update():
         options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         driver.get(URL_SITE)
-        time.sleep(15) # Чекаємо рендеру скриптів
+        time.sleep(5) # Чекаємо рендеру скриптів
         
         full_text = driver.find_element(By.TAG_NAME, "body").text
         found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
