@@ -218,7 +218,7 @@ def check_and_update():
 
         if should_update:
             print("🚀 [Дія] Виявлено зміни! Надсилання оновлень у Telegram...")
-            clear_chat_5(msg_ids)
+            ###clear_chat_5(msg_ids)
             new_mids = []
             for i, date_str in enumerate(current_dates):
                 if i >= len(current_imgs): break
