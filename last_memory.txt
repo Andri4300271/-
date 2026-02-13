@@ -1,7 +1,7 @@
 {
     "group": "3.2",
     "msg_ids": [
-        779
+        785
     ],
     "last_imgs": [
         "https://api.loe.lviv.ua/media/698e1efa2b62d_GPV-mobile.png"
