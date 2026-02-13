@@ -1,17 +1,17 @@
 {
     "group": "3.2",
     "msg_ids": [
-        786
+        787
     ],
     "last_imgs": [
-        "https://api.loe.lviv.ua/media/698e1efa2b62d_GPV-mobile.png"
+        "https://api.loe.lviv.ua/media/698eccc5b3822_GPV-mobile.png"
     ],
     "hours_by_date": {
         "13.02.2026": {
             "periods": [],
             "light_before": null,
             "light_after_last": null,
-            "site_time": "20:41",
+            "site_time": "09:03",
             "full_text_msg": "✅ <b>Електроенергія є.</b>"
         }
     },
