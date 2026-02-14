@@ -19,7 +19,9 @@ def load_memory():
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                if "msg_ids" not in data: data["msg_ids"] = []
+                return data
         except: pass
     return {"group": "3.2", "msg_ids": [], "last_imgs": [], "hours_by_date": {}, "last_dates": []}
 
@@ -30,7 +32,7 @@ def save_memory(group, msg_ids, last_imgs, hours_by_date, last_dates):
             "last_imgs": last_imgs, "hours_by_date": hours_by_date, "last_dates": last_dates
         }, f, ensure_ascii=False, indent=4)
 
-# --- МАТЕМАТИКА ТА ПАРСИНГ ---
+# --- МАТЕМАТИЧНІ ОБЧИСЛЕННЯ ---
 def calculate_duration(start, end):
     try:
         fmt = "%H:%M"
@@ -42,6 +44,7 @@ def calculate_duration(start, end):
         return f"{int(s // 3600)} г. {int((s % 3600) // 60)} х."
     except: return ""
 
+# --- ПАРСИНГ ---
 def extract_group_info(text_block, group, old_data=None):
     if not group: return "❌ Група не вказана", {}
     pattern = rf"Група {group}\.(.*?)(?=Група \d\.\d|$)"
@@ -81,12 +84,13 @@ def clear_chat_all(msg_ids):
         requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
     
     print("🧹 [Очищення] Видалення текстових запитів користувача...")
+    # Надсилаємо контрольну крапку
     r_temp = requests.post(f"{API_URL}/sendMessage", data={'chat_id': CHAT_ID, 'text': '...'}).json()
     if r_temp.get('ok'):
         last_id = r_temp['result']['message_id']
         for i in range(last_id, last_id - 10, -1):
             requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
-    time.sleep(1) # Коротке очікування для стабільності
+    time.sleep(1)
 
 # --- ГОЛОВНА ЛОГІКА ---
 def check_and_update():
@@ -110,7 +114,7 @@ def check_and_update():
                     cmd = re.search(r"(\d\.\d)", txt)
                     if cmd: 
                         current_group = cmd.group(1)
-                        hours_by_date = {}
+                        hours_by_date = {} 
                 requests.get(f"{API_URL}/getUpdates?offset={upd['update_id'] + 1}")
     except: pass
 
@@ -160,11 +164,20 @@ def check_and_update():
             for i in range(len(current_dates)):
                 if i >= len(current_imgs): break
                 d_str = current_dates[i]
+                
+                # ФОРМУВАННЯ ПОВІДОМЛЕННЯ
                 body = f"📅 <b>{d_str}</b> група {current_group}\n⏱ <i>Станом на {new_hours_map[d_str]['site_time']}</i>\n"
                 body += f"<a href='{current_imgs[i]}'>Графік відключень.</a>\n\n{new_hours_map[d_str]['msg']}"
                 
-                r = requests.post(f"{API_URL}/sendMessage", data={'chat_id': CHAT_ID, 'text': body, 'parse_mode': 'HTML'}).json()
-                print(f"DEBUG SEND: {r}") # ПОВНИЙ ВИВІД ВІДПОВІДІ ТЕЛЕГРАМ
+                # ВІДПРАВКА
+                r = requests.post(f"{API_URL}/sendMessage", data={
+                    'chat_id': CHAT_ID, 
+                    'text': body, 
+                    'parse_mode': 'HTML',
+                    'disable_web_page_preview': False
+                }).json()
+                
+                print(f"DEBUG SEND: {r}") # <--- ДИВІТЬСЯ СЮДИ В КОНСОЛІ
                 
                 if r.get('ok'):
                     new_mids.append(r['result']['message_id'])
@@ -180,13 +193,18 @@ def check_and_update():
                 d_str = current_dates[i]
                 body = f"📅 <b>{d_str}</b> група {current_group}\n⏱ <i>Станом на {new_hours_map[d_str]['site_time']}</i>\n"
                 body += f"<a href='{current_imgs[i]}'>Графік відключень.</a>\n\n{new_hours_map[d_str]['msg']}"
-                r_edit = requests.post(f"{API_URL}/editMessageText", data={'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'text': body, 'parse_mode': 'HTML'}).json()
+                r_edit = requests.post(f"{API_URL}/editMessageText", data={
+                    'chat_id': CHAT_ID, 
+                    'message_id': msg_ids[i], 
+                    'text': body, 
+                    'parse_mode': 'HTML'
+                }).json()
                 print(f"DEBUG EDIT: {r_edit}")
             save_memory(current_group, msg_ids, current_imgs, new_hours_map, current_dates)
         else:
             print("✅ [Статус] Без змін.")
 
-    except Exception as e: print(f"💥 Критична помилка: {e}")
+    except Exception as e: print(f"❌ Критична помилка: {e}")
     finally:
         if driver: driver.quit()
 
