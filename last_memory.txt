@@ -1,25 +1,18 @@
 {
     "group": "3.2",
     "msg_ids": [
-        792
+        793
     ],
     "last_imgs": [
-        "https://api.loe.lviv.ua/media/698f62cc9d423_GPV-mobile.png"
+        "https://api.loe.lviv.ua/media/6990055873ac2_GPV-mobile.png"
     ],
     "hours_by_date": {
         "14.02.2026": {
-            "periods": [
-                {
-                    "start": "11:00",
-                    "end": "14:30",
-                    "dur": "3 г. 30 х.",
-                    "light_after": null
-                }
-            ],
-            "light_before": "11 г. 0 х.",
-            "light_after_last": "9 г. 30 х.",
-            "site_time": "19:43",
-            "full_text_msg": "⚠️ <b>Планове відключення:</b>\n          💡  <i>11 г. 0 х.</i>\n   <b>11:00 - 14:30</b>   (3 г. 30 х.)\n          💡  <i>9 г. 30 х.</i>"
+            "periods": [],
+            "light_before": null,
+            "light_after_last": null,
+            "site_time": "07:17",
+            "full_text_msg": "✅ <b>Електроенергія є.</b>"
         }
     },
     "last_dates": [
