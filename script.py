@@ -12,6 +12,7 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 URL_SITE = "https://poweron.loe.lviv.ua"
 MEMORY_FILE = "last_memory.txt"
+# Перевірка наявності /bot в URL
 API_URL = f"https://api.telegram.org{TOKEN}"
 
 # --- РОБОТА З ПАМ'ЯТТЮ ---
@@ -20,7 +21,6 @@ def load_memory():
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                # Перевірка структури
                 if "msg_ids" not in data: data["msg_ids"] = []
                 return data
         except: pass
@@ -33,7 +33,7 @@ def save_memory(group, msg_ids, last_imgs, hours_by_date, last_dates):
             "last_imgs": last_imgs, "hours_by_date": hours_by_date, "last_dates": last_dates
         }, f, ensure_ascii=False, indent=4)
 
-# --- МАТЕМАТИЧНІ ОБЧИСЛЕННЯ ---
+# --- МАТЕМАТИКА ТА ПАРСИНГ (БЕЗ ЗМІН) ---
 def calculate_duration(start, end):
     try:
         fmt = "%H:%M"
@@ -45,7 +45,6 @@ def calculate_duration(start, end):
         return f"{int(s // 3600)} г. {int((s % 3600) // 60)} х."
     except: return ""
 
-# --- ПАРСИНГ ---
 def extract_group_info(text_block, group, old_data=None):
     if not group: return "❌ Група не вказана", {}
     pattern = rf"Група {group}\.(.*?)(?=Група \d\.\d|$)"
@@ -80,17 +79,20 @@ def extract_group_info(text_block, group, old_data=None):
 
 # --- ОЧИЩЕННЯ ЧАТУ ---
 def clear_chat_all(msg_ids):
-    print(f"🧹 [Очищення] Спроба видалити {len(msg_ids)} повідомлень бота...")
+    print(f"🧹 [Очищення] Видалення {len(msg_ids)} повідомлень бота...")
     for mid in msg_ids:
-        r = requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid}).json()
-        if not r.get('ok'): print(f"⚠️ Помилка видалення повідомлення {mid}: {r.get('description')}")
+        requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
     
-    print("🧹 [Очищення] Видалення текстових запитів користувача...")
-    r_temp = requests.post(f"{API_URL}/sendMessage", data={'chat_id': CHAT_ID, 'text': 'Оновлення...⏳'}).json()
-    last_id = r_temp.get('result', {}).get('message_id')
-    if last_id:
+    # Видалення останніх 10 повідомлень (включаючи текстові запити користувача)
+    print("🧹 [Очищення] Видалення текстових запитів користувача та сервісних повідомлень...")
+    # Надсилаємо крапку, щоб отримати останній ID
+    r_temp = requests.post(f"{API_URL}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
+    if r_temp.get('ok'):
+        last_id = r_temp['result']['message_id']
         for i in range(last_id, last_id - 10, -1):
             requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
+    else:
+        print(f"❌ Помилка сервісного повідомлення: {r_temp.get('description')}")
 
 # --- ГОЛОВНА ЛОГІКА ---
 def check_and_update():
@@ -101,24 +103,25 @@ def check_and_update():
     last_dates = mem.get("last_dates", [])
     last_imgs = mem.get("last_imgs", [])
     
-    # 1. Перевірка команд
+    # 1. Перевірка команд через getUpdates
     user_req = False
     try:
-        updates = requests.get(f"{API_URL}/getUpdates?offset=-1&limit=5").json()
-        if updates.get('result'):
-            for upd in updates['result']:
+        resp = requests.get(f"{API_URL}/getUpdates?offset=-1&limit=5").json()
+        if resp.get('result'):
+            for upd in resp['result']:
                 txt = upd.get('message', {}).get('text', '')
                 if txt:
                     user_req = True
-                    print(f"📩 [Запит] Отримано: {txt}")
+                    print(f"📩 [Запит] Отримано текст: '{txt}'")
                     cmd = re.search(r"(\d\.\d)", txt)
                     if cmd: 
                         current_group = cmd.group(1)
-                        hours_by_date = {} # Скидаємо години при зміні групи
+                        hours_by_date = {} # Скидаємо при зміні групи
+                # Підтверджуємо отримання
                 requests.get(f"{API_URL}/getUpdates?offset={upd['update_id'] + 1}")
     except: pass
 
-    # 2. Selenium
+    # 2. Робота з Selenium
     driver = None
     try:
         options = Options()
@@ -133,8 +136,8 @@ def check_and_update():
         current_dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
         blocks = re.split(r"Графік погодинних відключень на", full_text)[1:]
 
-        if not current_dates: 
-            print("🛑 [Помилка] Дати на сайті не знайдено.")
+        if not current_dates:
+            print("🛑 [Помилка] Сайт не завантажив дати.")
             return
 
         new_hours_map = {}
@@ -158,12 +161,12 @@ def check_and_update():
                      (i < len(last_imgs) and current_imgs[i] != last_imgs[i]):
                     time_or_link_changed = True
 
-        # ДІЯ
+        # ВИРІШАЛЬНА ДІЯ
         should_repost = user_req or schedule_changed or new_appeared or not msg_ids or len(msg_ids) != len(current_dates)
 
         if should_repost:
             clear_chat_all(msg_ids)
-            print("🚀 [Надсилання] Публікація нових графіків...")
+            print(f"🚀 [Надсилання] Публікація {len(current_dates)} графіків...")
             new_mids = []
             for i in range(len(current_dates)):
                 if i >= len(current_imgs): break
@@ -171,16 +174,20 @@ def check_and_update():
                 body = f"📅 <b>{d_str}</b> група {current_group}\n⏱ <i>Станом на {new_hours_map[d_str]['site_time']}</i>\n"
                 body += f"<a href='{current_imgs[i]}'> Графік відключень.</a>\n\n{new_hours_map[d_str]['msg']}"
                 
+                # Відправка
                 r = requests.post(f"{API_URL}/sendMessage", data={'chat_id': CHAT_ID, 'text': body, 'parse_mode': 'HTML'}).json()
+                
                 if r.get('ok'):
-                    new_mids.append(r['result']['message_id'])
+                    mid = r['result']['message_id']
+                    new_mids.append(mid)
+                    print(f"✅ Повідомлення надіслано! ID: {mid}")
                 else:
-                    print(f"❌ Помилка надсилання: {r.get('description')}")
+                    print(f"❌ ПОМИЛКА TELEGRAM: {r.get('description')} (CHAT_ID: {CHAT_ID})")
             
             save_memory(current_group, new_mids, current_imgs, new_hours_map, current_dates)
 
         elif time_or_link_changed:
-            print("✏️ [Редагування] Оновлення часу...")
+            print("✏️ [Редагування] Оновлення тексту...")
             for i in range(len(current_dates)):
                 if i >= len(msg_ids): break
                 d_str = current_dates[i]
@@ -189,7 +196,7 @@ def check_and_update():
                 requests.post(f"{API_URL}/editMessageText", data={'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'text': body, 'parse_mode': 'HTML'})
             save_memory(current_group, msg_ids, current_imgs, new_hours_map, current_dates)
         else:
-            print("✅ [Статус] Без змін.")
+            print("✅ [Статус] Змін не виявлено.")
 
     except Exception as e: print(f"❌ Критична помилка: {e}")
     finally:
