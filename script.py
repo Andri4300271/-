@@ -12,27 +12,22 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 URL_SITE = "https://poweron.loe.lviv.ua"
 MEMORY_FILE = "last_memory.txt"
+# Перевірка правильності формування URL
 API_URL = f"https://api.telegram.org{TOKEN}"
 
-# --- РОБОТА З ПАМ'ЯТТЮ ---
 def load_memory():
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if "msg_ids" not in data: data["msg_ids"] = []
-                return data
+                return json.load(f)
         except: pass
     return {"group": "3.2", "msg_ids": [], "last_imgs": [], "hours_by_date": {}, "last_dates": []}
 
 def save_memory(group, msg_ids, last_imgs, hours_by_date, last_dates):
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-        json.dump({
-            "group": group, "msg_ids": msg_ids, 
-            "last_imgs": last_imgs, "hours_by_date": hours_by_date, "last_dates": last_dates
-        }, f, ensure_ascii=False, indent=4)
+        json.dump({"group": group, "msg_ids": msg_ids, "last_imgs": last_imgs, 
+                   "hours_by_date": hours_by_date, "last_dates": last_dates}, f, ensure_ascii=False, indent=4)
 
-# --- МАТЕМАТИЧНІ ОБЧИСЛЕННЯ ---
 def calculate_duration(start, end):
     try:
         fmt = "%H:%M"
@@ -44,7 +39,6 @@ def calculate_duration(start, end):
         return f"{int(s // 3600)} г. {int((s % 3600) // 60)} х."
     except: return ""
 
-# --- ПАРСИНГ ---
 def extract_group_info(text_block, group, old_data=None):
     if not group: return "❌ Група не вказана", {}
     pattern = rf"Група {group}\.(.*?)(?=Група \d\.\d|$)"
@@ -77,51 +71,41 @@ def extract_group_info(text_block, group, old_data=None):
             return "\n".join(res_lines), current_data
     return "❌ Дані відсутні", current_data
 
-# --- ОЧИЩЕННЯ ЧАТУ ---
 def clear_chat_all(msg_ids):
     print(f"🧹 [Очищення] Видаляємо {len(msg_ids)} повідомлень бота...")
     for mid in msg_ids:
-        requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
+        requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid}, timeout=10)
     
-    print("🧹 [Очищення] Видалення текстових запитів користувача...")
-    # Надсилаємо контрольну крапку
-    r_temp = requests.post(f"{API_URL}/sendMessage", data={'chat_id': CHAT_ID, 'text': '...'}).json()
+    # Контрольна точка очищення
+    r_temp = requests.post(f"{API_URL}/sendMessage", data={'chat_id': CHAT_ID, 'text': '...'}, timeout=10).json()
     if r_temp.get('ok'):
         last_id = r_temp['result']['message_id']
         for i in range(last_id, last_id - 10, -1):
-            requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
-    time.sleep(1)
+            requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i}, timeout=10)
 
-# --- ГОЛОВНА ЛОГІКА ---
 def check_and_update():
     mem = load_memory()
     current_group = mem.get("group", "3.2")
-    msg_ids = mem.get("msg_ids", [])
-    hours_by_date = mem.get("hours_by_date", {})
-    last_dates = mem.get("last_dates", [])
-    last_imgs = mem.get("last_imgs", [])
+    msg_ids, last_imgs = mem.get("msg_ids", []), mem.get("last_imgs", [])
+    hours_by_date, last_dates = mem.get("hours_by_date", {}), mem.get("last_dates", [])
     
     user_req = False
     try:
-        resp = requests.get(f"{API_URL}/getUpdates?offset=-1&limit=5").json()
+        resp = requests.get(f"{API_URL}/getUpdates?offset=-1&limit=5", timeout=10).json()
         if resp.get('result'):
             for upd in resp['result']:
-                msg = upd.get('message', {})
-                txt = msg.get('text', '')
+                txt = upd.get('message', {}).get('text', '')
                 if txt:
                     user_req = True
-                    print(f"📩 [Запит] Отримано текст: '{txt}'")
+                    print(f"📩 [Запит] Текст: '{txt}'")
                     cmd = re.search(r"(\d\.\d)", txt)
-                    if cmd: 
-                        current_group = cmd.group(1)
-                        hours_by_date = {} 
-                requests.get(f"{API_URL}/getUpdates?offset={upd['update_id'] + 1}")
+                    if cmd: current_group = cmd.group(1); hours_by_date = {}
+                requests.get(f"{API_URL}/getUpdates?offset={upd['update_id'] + 1}", timeout=10)
     except: pass
 
     driver = None
     try:
-        options = Options()
-        options.add_argument("--headless=new")
+        options = Options(); options.add_argument("--headless=new")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         driver.get(URL_SITE)
         print(f"🌐 [Браузер] Перевірка {URL_SITE}...")
@@ -155,54 +139,39 @@ def check_and_update():
                      (i < len(last_imgs) and current_imgs[i] != last_imgs[i]):
                     time_or_link_changed = True
 
-        should_repost = user_req or schedule_changed or new_appeared or not msg_ids or len(msg_ids) != len(current_dates)
-
-        if should_repost:
+        if user_req or schedule_changed or new_appeared or not msg_ids or len(msg_ids) != len(current_dates):
             clear_chat_all(msg_ids)
-            print(f"🚀 [Надсилання] Публікація {len(current_dates)} графіків...")
+            print(f"🚀 [Надсилання] Публікація графіків...")
             new_mids = []
             for i in range(len(current_dates)):
                 if i >= len(current_imgs): break
                 d_str = current_dates[i]
-                
-                # ФОРМУВАННЯ ПОВІДОМЛЕННЯ
                 body = f"📅 <b>{d_str}</b> група {current_group}\n⏱ <i>Станом на {new_hours_map[d_str]['site_time']}</i>\n"
                 body += f"<a href='{current_imgs[i]}'>Графік відключень.</a>\n\n{new_hours_map[d_str]['msg']}"
                 
-                # ВІДПРАВКА
-                r = requests.post(f"{API_URL}/sendMessage", data={
-                    'chat_id': CHAT_ID, 
-                    'text': body, 
-                    'parse_mode': 'HTML',
-                    'disable_web_page_preview': False
-                }).json()
+                # КРИТИЧНИЙ ДЕБАГ: Виводимо все, що повертає Telegram
+                response = requests.post(f"{API_URL}/sendMessage", 
+                                        data={'chat_id': CHAT_ID, 'text': body, 'parse_mode': 'HTML'}, 
+                                        timeout=15)
+                r_json = response.json()
+                print(f"📢 DEBUG_RESPONSE: {r_json}")
                 
-                print(f"DEBUG SEND: {r}") # <--- ДИВІТЬСЯ СЮДИ В КОНСОЛІ
-                
-                if r.get('ok'):
-                    new_mids.append(r['result']['message_id'])
+                if r_json.get('ok'):
+                    new_mids.append(r_json['result']['message_id'])
                 else:
-                    print(f"❌ ПОМИЛКА TELEGRAM: {r.get('description')}")
+                    print(f"❌ ПОМИЛКА: {r_json.get('description')}")
             
             save_memory(current_group, new_mids, current_imgs, new_hours_map, current_dates)
 
         elif time_or_link_changed:
-            print("✏️ [Редагування] Оновлення тексту...")
+            print("✏️ [Редагування] Оновлення...")
             for i in range(len(current_dates)):
                 if i >= len(msg_ids): break
-                d_str = current_dates[i]
-                body = f"📅 <b>{d_str}</b> група {current_group}\n⏱ <i>Станом на {new_hours_map[d_str]['site_time']}</i>\n"
-                body += f"<a href='{current_imgs[i]}'>Графік відключень.</a>\n\n{new_hours_map[d_str]['msg']}"
-                r_edit = requests.post(f"{API_URL}/editMessageText", data={
-                    'chat_id': CHAT_ID, 
-                    'message_id': msg_ids[i], 
-                    'text': body, 
-                    'parse_mode': 'HTML'
-                }).json()
-                print(f"DEBUG EDIT: {r_edit}")
+                body = f"📅 <b>{current_dates[i]}</b> група {current_group}\n⏱ <i>Станом на {new_hours_map[current_dates[i]]['site_time']}</i>\n"
+                body += f"<a href='{current_imgs[i]}'>Графік відключень.</a>\n\n{new_hours_map[current_dates[i]]['msg']}"
+                requests.post(f"{API_URL}/editMessageText", data={'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'text': body, 'parse_mode': 'HTML'}, timeout=10)
             save_memory(current_group, msg_ids, current_imgs, new_hours_map, current_dates)
-        else:
-            print("✅ [Статус] Без змін.")
+        else: print("✅ [Статус] Без змін.")
 
     except Exception as e: print(f"❌ Критична помилка: {e}")
     finally:
