@@ -12,25 +12,31 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 URL_SITE = "https://poweron.loe.lviv.ua"
 MEMORY_FILE = "last_memory.txt"
+# Обов'язково додаємо /bot перед токеном для коректної роботи API
+API_URL = f"https://api.telegram.org{TOKEN}"
 
 # --- РОБОТА З ПАМ'ЯТТЮ ---
 def load_memory():
+    """Завантажує попередній стан: групу, ID повідомлень, посилання на фото та години."""
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except: pass
+    # Якщо файлу немає, повертаємо порожню структуру
     return {"group": "", "msg_ids": [], "last_imgs": [], "hours_by_date": {}, "last_dates": []}
 
 def save_memory(group, msg_ids, last_imgs, hours_by_date, last_dates):
+    """Зберігає поточний стан у JSON файл для порівняння в наступному циклі."""
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump({
             "group": group, "msg_ids": msg_ids, 
             "last_imgs": last_imgs, "hours_by_date": hours_by_date, "last_dates": last_dates
-        }, f, ensure_ascii=False)
+        }, f, ensure_ascii=False, indent=4)
 
 # --- МАТЕМАТИЧНІ ОБЧИСЛЕННЯ ---
 def calculate_duration(start, end):
+    """Рахує тривалість (напр. 10:00 - 14:00 = 4 г. 0 х.). Обробляє 24:00 як 23:59 + 1хв."""
     try:
         fmt = "%H:%M"
         end_proc = "23:59" if end == "24:00" else end
@@ -43,11 +49,16 @@ def calculate_duration(start, end):
 
 # --- ВІЗУАЛІЗАЦІЯ ЗМІН ---
 def format_row(s, e, dur, old_data, is_new_date):
+    """Формує рядок відключення. Якщо години або тривалість змінилися — підкреслює їх."""
     if is_new_date or not old_data or 'periods' not in old_data:
         return f"   <b>{s} - {e}</b>   ({dur})"
+    
     old_periods = old_data['periods']
+    # Шукаємо повний збіг (старт, кінець, тривалість)
     exact_match = any(p['start'] == s and p['end'] == e and p['dur'] == dur for p in old_periods)
+    
     if not exact_match:
+        # Підкреслюємо окремо старт, кінець або тривалість, якщо вони нові
         s_disp = f"<u>{s}</u>" if not any(p['start'] == s for p in old_periods) else s
         e_disp = f"<u>{e}</u>" if not any(p['end'] == e for p in old_periods) else e
         d_disp = f"<u>{dur}</u>" if not any(p['dur'] == dur for p in old_periods) else dur
@@ -56,32 +67,37 @@ def format_row(s, e, dur, old_data, is_new_date):
 
 # --- ПАРСИНГ ТА РОЗРАХУНОК ---
 def extract_group_info(text_block, group, old_data=None):
+    """Витягує дані для групи, рахує періоди світла 💡 та підкреслює зміну статусу 'Є світло'."""
     if not group: return "", {}
     pattern = rf"Група {group}\.(.*?)(?=Група \d\.\d|$)"
     match = re.search(pattern, text_block, re.DOTALL)
-    # Додано is_full_light для відстеження появи світла
+    
     current_data = {"periods": [], "light_before": None, "light_after_last": None, "is_full_light": False}
     is_new_date = old_data is None
 
     if match:
         content = match.group(1).strip()
+        
+        # Перевірка статусу "Електроенергія є"
         if "Електроенергія є." in content and "немає" not in content:
             current_data["is_full_light"] = True
-            # Підкреслюємо, якщо раніше були відключення
+            # Якщо раніше були відключення, а тепер світло є — підкреслюємо весь статус
             was_off = old_data and (len(old_data.get("periods", [])) > 0 or not old_data.get("is_full_light", True))
             status = "✅ <b><u>Електроенергія є.</u></b>" if was_off and not is_new_date else "✅ <b>Електроенергія є.</b>"
             return status, current_data
             
+        # Пошук періодів відключень
         all_matches = re.findall(r"(\d{2}:\d{2}) до (\d{2}:\d{2})", content)
         for s, e in all_matches:
-            current_data["periods"].append({"start": s, "end": e, "dur": calculate_duration(s, e), "light_after": None})
+            current_data["periods"].append({"start": s, "end": e, "dur": calculate_duration(s, e)})
 
         if current_data["periods"]:
-            # Підкреслюємо заголовок, якщо раніше було світло
+            # Якщо раніше було світло, а тепер з'явився графік — підкреслюємо заголовок
             was_full_light = old_data.get("is_full_light", False) if old_data else False
             header = "⚠️ <b><u>Планове відключення:</u></b>" if was_full_light and not is_new_date else "⚠️ <b>Планове відключення:</b>"
             res_lines = [header]
-            # 🌑 Початок доби
+            
+            # --- 🌑 Початок доби (світло до першого відключення) ---
             first_p = current_data["periods"][0]
             if first_p["start"] != "00:00":
                 l_dur = calculate_duration("00:00", first_p["start"])
@@ -89,7 +105,8 @@ def extract_group_info(text_block, group, old_data=None):
                 old_l = old_data.get("light_before") if old_data else None
                 l_disp = f"<u>{l_dur}</u>" if not is_new_date and l_dur != old_l else l_dur
                 res_lines.append(f"          💡  <i>{l_disp}</i>")
-            # 💡 Періоди всередині
+
+            # --- 💡 Періоди всередині (між відключеннями) ---
             prev_end = None
             for i, p in enumerate(current_data["periods"]):
                 if prev_end:
@@ -100,7 +117,8 @@ def extract_group_info(text_block, group, old_data=None):
                     res_lines.append(f"          💡  <i>{l_disp}</i>")
                 res_lines.append(format_row(p["start"], p["end"], p["dur"], old_data, is_new_date))
                 prev_end = p["end"]
-            # 🌕 Кінець доби
+
+            # --- 🌕 Кінець доби (світло після останнього відключення) ---
             last_e = current_data["periods"][-1]["end"]
             if last_e != "24:00":
                 l_dur = calculate_duration(last_e, "24:00")
@@ -108,151 +126,165 @@ def extract_group_info(text_block, group, old_data=None):
                 old_l = old_data.get("light_after_last") if old_data else None
                 l_disp = f"<u>{l_dur}</u>" if not is_new_date and l_dur != old_l else l_dur
                 res_lines.append(f"          💡  <i>{l_disp}</i>")
+            
             return "\n".join(res_lines), current_data
-    return "", current_data
+    return "❌ Дані відсутні", current_data
 
 # --- ОЧИЩЕННЯ ЧАТУ ---
-def clear_chat_5(msg_ids):
-    print("🧹 [Дія] Початок повного очищення чату...")
+def clear_chat_all(msg_ids):
+    """Видаляє повідомлення бота та будь-які текстові повідомлення користувача (останні 10)."""
+    print("🧹 [Дія] Видалення повідомлень та зачистка чату...")
     try:
+        # Видаляємо старі повідомлення бота, збережені в пам'яті
         for mid in msg_ids:
-            requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
-        r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
+            requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
+        # Надсилаємо тимчасову крапку, щоб знайти останній ID, і видаляємо все навколо (тексти користувача)
+        r = requests.post(f"{API_URL}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
         last_id = r.get('result', {}).get('message_id')
         if last_id:
-            for i in range(last_id, last_id - 6, -1):
-                requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
-    except Exception as e: print(f"⚠️ [Помилка] Очищення чату: {e}")
+            for i in range(last_id, last_id - 10, -1):
+                requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
+    except: pass
 
 # --- ГОЛОВНА ЛОГІКА ---
 def check_and_update():
-    """Основний процес перевірки сайту та оновлення Telegram."""
-    print(f"🕒 [{datetime.now().strftime('%H:%M:%S')}] Старт циклу перевірки.")
+    """Центральна функція: перевірка команд, Selenium, порівняння змін, оновлення/редагування."""
     mem = load_memory()
-    current_group = mem.get("group", "")
-    msg_ids = mem.get("msg_ids", [])
-    last_imgs = mem.get("last_imgs", [])
-    hours_by_date = mem.get("hours_by_date", {})
+    current_group, msg_ids = mem.get("group", ""), mem.get("msg_ids", [])
+    last_imgs, hours_by_date = mem.get("last_imgs", []), mem.get("hours_by_date", {})
     last_dates = mem.get("last_dates", [])
     
-    user_interfered = False
-    print("📩 [Дія] Перевірка команд у Telegram...")
+    # 1. Перевірка вхідних команд (текстових повідомлень)
+    user_req = False
     try:
-        res = requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset=-1&limit=10").json()
-        if res.get('result'):
-            for upd in res['result']:
-                msg_text = upd.get('message', {}).get('text', '')
-                if msg_text:
-                    print(f"💬 [Текст] Отримано запит: '{msg_text}'.")
-                    user_interfered = True
-                    cmd = re.search(r"(\d\.\d)", msg_text) # Шукаємо групу типу 2.1
-                    if cmd:
-                        new_group = cmd.group(1)
-                        if new_group != current_group:
-                            print(f"🎯 [Зміна групи] {current_group} -> {new_group}.")
-                            current_group = new_group
-                            hours_by_date = {}
-                requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={upd['update_id'] + 1}")
-    except Exception as e: print(f"❌ [Помилка] Telegram API: {e}")
+        updates = requests.get(f"{API_URL}/getUpdates?offset=-1&limit=5").json()
+        if updates.get('result'):
+            for upd in updates['result']:
+                txt = upd.get('message', {}).get('text', '')
+                if txt:
+                    user_req = True # Будь-який текст провокує очищення та перенадсилання
+                    print(f"📩 [Запит] Отримано повідомлення: {txt}")
+                    # Якщо формат /3.2 або просто 3.2 — змінюємо групу
+                    cmd = re.search(r"(\d\.\d)", txt)
+                    if cmd: 
+                        new_g = cmd.group(1)
+                        if new_g != current_group:
+                            print(f"🎯 [Група] Зміна на {new_g}")
+                            current_group, hours_by_date = new_g, {}
+                # Підтверджуємо отримання, щоб не обробляти знову
+                requests.get(f"{API_URL}/getUpdates?offset={upd['update_id'] + 1}")
+    except: pass
 
+    # 2. Робота з браузером Selenium
     driver = None
     try:
-        print(f"🌐 [Дія] Відкриття браузера {URL_SITE}...")
+        print(f"🌐 [Браузер] Відкриття {URL_SITE}...")
         options = Options()
         options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--window-size=390,1200")
-        # Емуляція iPhone для отримання мобільної версії
-        options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         driver.get(URL_SITE)
-        time.sleep(7) # Чекаємо рендеру скриптів
+        time.sleep(10) # Чекаємо завантаження динамічного контенту
         
         full_text = driver.find_element(By.TAG_NAME, "body").text
+        # Парсимо час оновлення на сайті, посилання на картинки та дати
         found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
-        imgs_elements = driver.find_elements(By.XPATH, "//img[contains(@src, '_GPV-mobile.png')]")
-        current_imgs = [img.get_attribute("src") for img in imgs_elements]
+        current_imgs = [img.get_attribute("src") for img in driver.find_elements(By.XPATH, "//img[contains(@src, '_GPV-mobile.png')]")]
         current_dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
         blocks = re.split(r"Графік погодинних відключень на", full_text)[1:]
 
-        new_hours_data_map = {}
-        print(f"📊 [Аналіз] Знайдено дат на сайті: {len(current_dates)}")
-        
+        # Аналізуємо кожен блок дати
+        new_hours_map = {}
         for i, b in enumerate(blocks):
             if i >= len(current_dates): break
-            date_str = current_dates[i]
-            site_time = found_times[i] if i < len(found_times) else "00:00"
-            old_d = hours_by_date.get(date_str)
-            txt, dat = extract_group_info(b, current_group, old_d)
-            dat["site_time"] = site_time 
-            dat["full_text_msg"] = txt
-            new_hours_data_map[date_str] = dat
+            d_str = current_dates[i]
+            txt, dat = extract_group_info(b, current_group, hours_by_date.get(d_str))
+            dat.update({
+                "site_time": found_times[i] if i < len(found_times) else "00:00", 
+                "msg": txt
+            })
+            new_hours_map[d_str] = dat
 
-        # Порівняння для рішення про оновлення
-        any_schedule_change = False
-        any_site_time_change = False
-        new_graph_appeared = any(d not in last_dates for d in current_dates)
-
-        for d in current_dates:
+        # --- АНАЛІЗ ТИПУ ЗМІН ---
+        schedule_changed = False # Змінилися години або статус світла
+        only_time_or_link_changed = False # Змінився тільки час або URL картинки
+        new_appeared = any(d not in last_dates for d in current_dates) # З'явилася нова дата
+        
+        for i, d in enumerate(current_dates):
             if d in hours_by_date:
-                # Зміна годин або статусу світла
-                if (new_hours_data_map[d]["periods"] != hours_by_date[d]["periods"] or 
-                    new_hours_data_map[d]["is_full_light"] != hours_by_date[d].get("is_full_light")):
-                    any_schedule_change = True
-                if new_hours_data_map[d]["site_time"] != hours_by_date[d].get("site_time"):
-                    any_site_time_change = True
+                # Перевірка зміни періодів або статусу 'is_full_light'
+                if new_hours_map[d]["periods"] != hours_by_date[d]["periods"] or \
+                   new_hours_map[d]["is_full_light"] != hours_by_date[d].get("is_full_light"):
+                    schedule_changed = True
+                # Перевірка зміни тільки часу або посилання на малюнок
+                elif new_hours_map[d]["site_time"] != hours_by_date[d].get("site_time") or \
+                     (i < len(last_imgs) and current_imgs[i] != last_imgs[i]):
+                    only_time_or_link_changed = True
 
-        should_update = user_interfered or any_schedule_change or any_site_time_change or new_graph_appeared
-        sound_needed = user_interfered or any_schedule_change or new_graph_appeared
+        # --- ВИКОНАННЯ ДІЙ ---
 
-        if should_update:
-            print("🚀 [Дія] Виявлено зміни! Надсилання оновлень у Telegram...")
-            ###clear_chat_5(msg_ids)
+        # ДІЯ А: Запит користувача / Зміна графіку / Новий день / Зміна кількості повідомлень
+        if user_req or schedule_changed or new_appeared or len(msg_ids) != len(current_dates):
+            print("🚀 [Дія] Повне перенадсилання графіків...")
+            clear_chat_all(msg_ids)
             new_mids = []
-            for i, date_str in enumerate(current_dates):
+            for i, d_str in enumerate(current_dates):
                 if i >= len(current_imgs): break
-                old_d = hours_by_date.get(date_str)
-                is_new_date = date_str not in last_dates
-                date_disp = f"<u>{date_str}</u>" if is_new_date else date_str
-                curr_st = new_hours_data_map[date_str]["site_time"]
-                old_st = old_d.get("site_time") if old_d else None
-                time_disp = f"<u>{curr_st}</u>" if not is_new_date and old_st and curr_st != old_st else curr_st
+                is_new = d_str not in last_dates
+                date_header = f"<u>{d_str}</u>" if is_new else d_str # Підкреслюємо нову дату
                 
-                cap = f"📅 <b>{date_disp}</b> група {current_group}\n⏱ <i>Станом на {time_disp}</i>\n{new_hours_data_map[date_str]['full_text_msg']}"
+                # Текст з гіперпосиланням на малюнок
+                msg_body = f"📅 <b>{date_header}</b> група {current_group}\n⏱ <i>Станом на {new_hours_map[d_str]['site_time']}</i>\n"
+                msg_body += f"<a href='{current_imgs[i]}'> Графік відключень.</a>\n\n"
+                msg_body += new_hours_map[d_str]["msg"]
                 
-                # Завантаження картинки та відправка
-                img_data = requests.get(urljoin(URL_SITE, current_imgs[i])).content
-                r = requests.post(f"https://api.telegram.org{TOKEN}/sendPhoto", 
-                                 data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML', 'disable_notification': not sound_needed}, 
-                                 files={'photo': ('g.png', io.BytesIO(img_data))}).json()
-                
+                r = requests.post(f"{API_URL}/sendMessage", data={
+                    'chat_id': CHAT_ID, 'text': msg_body, 'parse_mode': 'HTML'
+                }).json()
                 mid = r.get('result', {}).get('message_id')
                 if mid: new_mids.append(mid)
-            
-            save_memory(current_group, new_mids, current_imgs, new_hours_data_map, current_dates)
-            return True
-        elif len(msg_ids) > len(current_imgs):
-            print("🗑 [Дія] Видалення застарілого графіка (кількість днів зменшилась).")
-            for _ in range(len(msg_ids) - len(current_imgs)):
-                mid = msg_ids.pop(0)
-                ###requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
-            save_memory(current_group, msg_ids, current_imgs, new_hours_data_map, current_dates)
-        else: 
-            print("✅ [Статус] Дані на сайті ідентичні збереженим. Оновлення не потрібне.")
-    except Exception as e: print(f"❌ [Помилка] {e}")
-    finally:
-        if driver: 
-            driver.quit()
-            print("🔌 [Браузер] Закрито.")
-    return False
+            save_memory(current_group, new_mids, current_imgs, new_hours_map, current_dates)
 
+        # ДІЯ Б: Змінилося тільки "станом на" та посилання на малюнок -> Редагуємо старі повідомлення
+        elif only_time_or_link_changed:
+            print("✏️ [Дія] Редагування існуючих повідомлень (оновлення часу/лінку)...")
+            for i, d_str in enumerate(current_dates):
+                if i >= len(msg_ids): break
+                old_time = hours_by_date.get(d_str, {}).get("site_time")
+                new_time = new_hours_map[d_str]["site_time"]
+                # Підкреслюємо час, якщо він змінився
+                time_disp = f"<u>{new_time}</u>" if new_time != old_time else new_time
+                
+                new_text = f"📅 <b>{d_str}</b> група {current_group}\n⏱ <i>Станом на {time_disp}</i>\n"
+                new_text += f"<a href='{current_imgs[i]}'> Графік відключень.</a>\n\n"
+                new_text += new_hours_map[d_str]["msg"]
+                
+                requests.post(f"{API_URL}/editMessageText", data={
+                    'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'text': new_text, 'parse_mode': 'HTML'
+                })
+            save_memory(current_group, msg_ids, current_imgs, new_hours_map, current_dates)
+
+        # ДІЯ В: Якщо графік зник (наприклад, було 2 дні, стало 1) -> Видаляємо зайве
+        elif len(msg_ids) > len(current_dates):
+            print("🗑 [Дія] Видалення застарілого дня...")
+            for _ in range(len(msg_ids) - len(current_dates)):
+                mid = msg_ids.pop(0)
+                requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
+            save_memory(current_group, msg_ids, current_imgs, new_hours_map, current_dates)
+        
+        else:
+            print("✅ [Статус] Змін не виявлено.")
+
+    except Exception as e: 
+        print(f"❌ Помилка в циклі: {e}")
+    finally:
+        if driver: driver.quit()
+
+# --- ЗАПУСК ---
 if __name__ == "__main__":
-    print("🤖 Бот запущено. Починаю роботу...")
-    # Виконуємо 7 циклів перевірки
+    print(f"🤖 Бот активний. Заплановано циклів: 7. Пауза: 125с.")
     for cycle in range(7):
         print(f"\n--- [Цикл {cycle + 1} з 7] ---")
         check_and_update()
         if cycle < 6:
-            print("⏳ [Очікування] 120 секунд до наступної перевірки...")
-            time.sleep(133)
-    print("\n🏁 Роботу завершено.")
+            time.sleep(135)
+    print("\n🏁 Програма завершила 7 циклів. Роботу закінчено.")
