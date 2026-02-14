@@ -80,7 +80,7 @@ def extract_group_info(text_block, group, old_data=None):
             header = "⚠️ <b><u>Планове відключення:</u></b>" if was_full_light and not is_new_date else "⚠️ <b>Планове відключення:</b>"
             res_lines = [header]
             
-            # --- 🌑 Початок доби ---
+            # 🌑 Початок доби
             first_p = current_data["periods"][0]
             if first_p["start"] != "00:00":
                 l_dur = calculate_duration("00:00", first_p["start"])
@@ -89,7 +89,7 @@ def extract_group_info(text_block, group, old_data=None):
                 l_disp = f"<u>{l_dur}</u>" if not is_new_date and l_dur != old_l else l_dur
                 res_lines.append(f"          💡  <i>{l_disp}</i>")
 
-            # --- 💡 Періоди всередині ---
+            # 💡 Періоди всередині
             prev_end = None
             for i, p in enumerate(current_data["periods"]):
                 if prev_end:
@@ -101,7 +101,7 @@ def extract_group_info(text_block, group, old_data=None):
                 res_lines.append(format_row(p["start"], p["end"], p["dur"], old_data, is_new_date))
                 prev_end = p["end"]
 
-            # --- 🌕 Кінець доби ---
+            # 🌕 Кінець доби
             last_e = current_data["periods"][-1]["end"]
             if last_e != "24:00":
                 l_dur = calculate_duration(last_e, "24:00")
@@ -115,16 +115,18 @@ def extract_group_info(text_block, group, old_data=None):
 
 # --- ОЧИЩЕННЯ ЧАТУ ---
 def clear_chat_all(msg_ids):
-    print("🧹 [Дія] Видалення повідомлень...")
+    print("🧹 [Дія] Початок повного очищення повідомлень...")
     try:
+        # Видаляємо повідомлення бота з пам'яті
         for mid in msg_ids:
             requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
-        # Видаляємо останні 10 повідомлень навколо
+        # Видаляємо останні 10 повідомлень (ваші запити + сервісні)
         r = requests.post(f"{API_URL}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
         last_id = r.get('result', {}).get('message_id')
         if last_id:
             for i in range(last_id, last_id - 10, -1):
                 requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
+        print("✅ [Дія] Чат зачищено.")
     except: pass
 
 # --- ГОЛОВНА ЛОГІКА ---
@@ -136,14 +138,13 @@ def check_and_update():
     hours_by_date = mem.get("hours_by_date", {})
     last_dates = mem.get("last_dates", [])
     
-    # 1. Перевірка Telegram команд
+    # 1. Перевірка Telegram запитів
     user_req = False
     try:
         updates = requests.get(f"{API_URL}/getUpdates?offset=-1&limit=5").json()
         if updates.get('result'):
             for upd in updates['result']:
-                msg = upd.get('message', {})
-                txt = msg.get('text', '')
+                txt = upd.get('message', {}).get('text', '')
                 if txt:
                     user_req = True
                     print(f"📩 [Запит] Отримано текст: {txt}")
@@ -163,7 +164,7 @@ def check_and_update():
         options.add_argument("--headless=new")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         driver.get(URL_SITE)
-        time.sleep(5) # Збільшено час для надійного завантаження
+        time.sleep(12)
         
         full_text = driver.find_element(By.TAG_NAME, "body").text
         found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
@@ -171,51 +172,44 @@ def check_and_update():
         current_dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
         blocks = re.split(r"Графік погодинних відключень на", full_text)[1:]
 
-        # --- ЗАХИСТ ВІД ПОМИЛОК ПАРСИНГУ ---
         if not current_dates or len(blocks) < len(current_dates):
-            print("🛑 [Помилка] Сайт не завантажився повністю або блоки не знайдено.")
+            print("🛑 [Помилка] Сайт не завантажився повністю.")
             return
 
         new_hours_map = {}
         for i in range(len(current_dates)):
             d_str = current_dates[i]
-            # Безпечне отримання тексту блоку
-            block_content = blocks[i] if i < len(blocks) else ""
-            txt, dat = extract_group_info(block_content, current_group, hours_by_date.get(d_str))
-            
-            dat.update({
-                "site_time": found_times[i] if i < len(found_times) else "00:00", 
-                "msg": txt
-            })
+            txt, dat = extract_group_info(blocks[i], current_group, hours_by_date.get(d_str))
+            dat.update({"site_time": found_times[i] if i < len(found_times) else "00:00", "msg": txt})
             new_hours_map[d_str] = dat
 
-        # --- АНАЛІЗ ЗМІН ---
+        # Аналіз змін
         schedule_changed = False
         time_or_link_changed = False
         new_appeared = any(d not in last_dates for d in current_dates)
         
         for i, d in enumerate(current_dates):
             if d in hours_by_date:
-                # Зміна годин
                 if new_hours_map[d]["periods"] != hours_by_date[d]["periods"] or \
                    new_hours_map[d]["is_full_light"] != hours_by_date[d].get("is_full_light"):
                     schedule_changed = True
-                # Зміна тільки часу або картинки
                 elif new_hours_map[d]["site_time"] != hours_by_date[d].get("site_time") or \
                      (i < len(last_imgs) and current_imgs[i] != last_imgs[i]):
                     time_or_link_changed = True
 
-        # --- ВИКОНАННЯ ДІЙ ---
+        # --- ПОРЯДОК ДІЙ ---
 
-        # Випадок А: Повна зміна (запит, новий день, зміна годин)
+        # ПОВНЕ ОНОВЛЕННЯ (якщо запит, новий день або зміна годин)
         if user_req or schedule_changed or new_appeared or len(msg_ids) != len(current_dates):
-            print("🚀 [Дія] Надсилання оновлених даних...")
+            # СПОЧАТКУ ВИДАЛЯЄМО
             clear_chat_all(msg_ids)
+            
+            # ПОТІМ НАДСИЛАЄМО
+            print("🚀 [Дія] Надсилання оновлених графіків...")
             new_mids = []
             for i in range(len(current_dates)):
                 d_str = current_dates[i]
                 if i >= len(current_imgs): break
-                
                 is_new = d_str not in last_dates
                 date_header = f"<u>{d_str}</u>" if is_new else d_str
                 
@@ -228,11 +222,10 @@ def check_and_update():
                 if mid: new_mids.append(mid)
             save_memory(current_group, new_mids, current_imgs, new_hours_map, current_dates)
 
-        # Випадок Б: Редагування (тільки час "станом на")
+        # РЕДАГУВАННЯ (тільки якщо змінився час або лінк)
         elif time_or_link_changed:
             print("✏️ [Дія] Редагування часу оновлення...")
             for i in range(len(current_dates)):
-                # Захист: редагуємо тільки якщо є повідомлення в пам'яті
                 if i >= len(msg_ids): break
                 d_str = current_dates[i]
                 old_time = hours_by_date.get(d_str, {}).get("site_time")
@@ -254,9 +247,9 @@ def check_and_update():
     finally:
         if driver: driver.quit()
 
-# --- ЗАПУСК НА 7 ЦИКЛІВ ---
+# --- ЗАПУСК ---
 if __name__ == "__main__":
-    print(f"🤖 Бот активний (7 циклів). Пауза 125с.")
+    print(f"🤖 Бот активний (7 циклів).")
     for cycle in range(1):
         print(f"\n--- [Цикл {cycle + 1} з 7] ---")
         check_and_update()
