@@ -1,11 +1,15 @@
 {
-    "group": "",
+    "group": "3.2",
     "msg_ids": [],
     "last_imgs": [],
     "hours_by_date": {
         "14.02.2026": {
+            "periods": [],
+            "light_before": null,
+            "light_after_last": null,
+            "is_full_light": true,
             "site_time": "07:17",
-            "msg": ""
+            "msg": "✅ <b>Електроенергія є.</b>"
         }
     },
     "last_dates": [
