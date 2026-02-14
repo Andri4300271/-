@@ -36,7 +36,7 @@ def calculate_duration(start, end):
         return f"{int(s // 3600)} г. {int((s % 3600) // 60)} х."
     except: return ""
 
-def extract_group_info(text_block, group, old_data=None):
+def extract_group_info(text_block, group):
     if not group: return "❌ Група не вказана", {}
     pattern = rf"Група {group}\.(.*?)(?=Група \d\.\d|$)"
     match = re.search(pattern, text_block, re.DOTALL)
@@ -75,13 +75,13 @@ def check_and_update():
                     cmd = re.search(r"(\d\.\d)", txt)
                     if cmd: current_group = cmd.group(1); hours_by_date = {}
                 requests.get(f"{API_URL}/getUpdates?offset={u['update_id']+1}", timeout=5)
-    except: print("⚠️ Не вдалося перевірити Telegram (можливо, потрібен VPN)")
+    except: pass
 
     driver = None
     try:
         opt = Options(); opt.add_argument("--headless=new")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opt)
-        driver.get(URL_SITE); print(f"🌐 [Браузер] Перевірка {URL_SITE}..."); time.sleep(12)
+        driver.get(URL_SITE); print(f"🌐 [Браузер] Перевірка сайту..."); time.sleep(15)
         
         txt_all = driver.find_element(By.TAG_NAME, "body").text
         times = re.findall(r"станом на (\d{2}:\d{2})", txt_all)
@@ -89,19 +89,24 @@ def check_and_update():
         dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", txt_all)
         blocks = re.split(r"Графік погодинних відключень на", txt_all)[1:]
 
-        if not dates: return
+        if not dates: 
+            print("🛑 Не знайшов дат на сайті.")
+            return
 
         new_map = {}
         for i, d in enumerate(dates):
-            t, dat = extract_group_info(blocks[i] if i < len(blocks) else "", current_group, hours_by_date.get(d))
+            t, dat = extract_group_info(blocks[i] if i < len(blocks) else "", current_group)
             dat.update({"site_time": times[i] if i < len(times) else "00:00", "msg": t})
             new_map[d] = dat
 
-        # Спрощена логіка: будь-яка зміна або запит = перенадсилання
+        # Якщо був запит, або змінились дати, або немає повідомлень у пам'яті
         if user_req or dates != last_dates or not msg_ids:
-            print(f"🚀 [Надсилання] Публікація графіків...")
-            # Видаляємо старі
-            for mid in msg_ids: requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid}, timeout=5)
+            print(f"🚀 [Надсилання] Починаю відправку {len(dates)} повідомлень...")
+            
+            # Видаляємо старі повідомлення бота
+            for mid in msg_ids:
+                try: requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid}, timeout=3)
+                except: pass
             
             new_mids = []
             for i, d in enumerate(dates):
@@ -109,19 +114,24 @@ def check_and_update():
                 body = f"📅 <b>{d}</b> група {current_group}\n⏱ <i>Станом на {new_map[d]['site_time']}</i>\n"
                 body += f"<a href='{imgs[i]}'>Графік відключень.</a>\n\n{new_map[d]['msg']}"
                 
+                print(f"📦 [DEBUG] Текст для відправки:\n{body[:100]}...")
+                
                 try:
-                    res = requests.post(f"{API_URL}/sendMessage", data={'chat_id': CHAT_ID, 'text': body, 'parse_mode': 'HTML'}, timeout=10)
-                    r_json = res.json()
-                    print(f"📢 ВІДПОВІДЬ TELEGRAM: {r_json}")
-                    if r_json.get('ok'): new_mids.append(r_json['result']['message_id'])
-                except Exception as e:
-                    print(f"❌ ПОМИЛКА МЕРЕЖІ: {e}")
+                    res = requests.post(f"{API_URL}/sendMessage", 
+                                        data={'chat_id': CHAT_ID, 'text': body, 'parse_mode': 'HTML'}, 
+                                        timeout=10)
+                    resp_json = res.json()
+                    print(f"📢 [Відповідь Telegram]: {resp_json}")
+                    if resp_json.get('ok'):
+                        new_mids.append(resp_json['result']['message_id'])
+                except requests.exceptions.RequestException as err:
+                    print(f"❌ [ПОМИЛКА МЕРЕЖІ]: {err}")
             
             save_memory(current_group, new_mids, imgs, new_map, dates)
         else:
             print("✅ Без змін.")
 
-    except Exception as e: print(f"❌ Помилка: {e}")
+    except Exception as e: print(f"💥 Помилка: {e}")
     finally:
         if driver: driver.quit()
 
