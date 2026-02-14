@@ -12,14 +12,10 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 URL_SITE = "https://poweron.loe.lviv.ua"
 MEMORY_FILE = "last_memory.txt"
-# Перевірка: чи токен не порожній
-if not TOKEN or not CHAT_ID:
-    print("❌ КРИТИЧНО: TOKEN або CHAT_ID не встановлені в системних змінних!")
 API_URL = f"https://api.telegram.org{TOKEN}"
 
 # --- РОБОТА З ПАМ'ЯТТЮ ---
 def load_memory():
-    """Завантаження попереднього стану."""
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
@@ -28,14 +24,13 @@ def load_memory():
     return {"group": "3.2", "msg_ids": [], "last_imgs": [], "hours_by_date": {}, "last_dates": []}
 
 def save_memory(group, msg_ids, last_imgs, hours_by_date, last_dates):
-    """Збереження поточного стану."""
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump({
             "group": group, "msg_ids": msg_ids, 
             "last_imgs": last_imgs, "hours_by_date": hours_by_date, "last_dates": last_dates
         }, f, ensure_ascii=False, indent=4)
 
-# --- МАТЕМАТИЧНІ ОБЧИСЛЕННЯ ---
+# --- МАТЕМАТИКА ТА ПАРСИНГ ---
 def calculate_duration(start, end):
     try:
         fmt = "%H:%M"
@@ -47,9 +42,7 @@ def calculate_duration(start, end):
         return f"{int(s // 3600)} г. {int((s % 3600) // 60)} х."
     except: return ""
 
-# --- ПАРСИНГ ---
 def extract_group_info(text_block, group, old_data=None):
-    """Витягує дані про відключення для конкретної групи."""
     if not group: return "❌ Група не вказана", {}
     pattern = rf"Група {group}\.(.*?)(?=Група \d\.\d|$)"
     match = re.search(pattern, text_block, re.DOTALL)
@@ -83,22 +76,20 @@ def extract_group_info(text_block, group, old_data=None):
 
 # --- ОЧИЩЕННЯ ЧАТУ ---
 def clear_chat_all(msg_ids):
-    """Видаляє старі повідомлення та зачищає останні дії користувача."""
     print(f"🧹 [Очищення] Видаляємо {len(msg_ids)} повідомлень бота...")
     for mid in msg_ids:
         requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
     
     print("🧹 [Очищення] Видалення текстових запитів користувача...")
-    # Надсилаємо контрольну крапку
     r_temp = requests.post(f"{API_URL}/sendMessage", data={'chat_id': CHAT_ID, 'text': '...'}).json()
     if r_temp.get('ok'):
         last_id = r_temp['result']['message_id']
         for i in range(last_id, last_id - 10, -1):
             requests.post(f"{API_URL}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
+    time.sleep(1) # Коротке очікування для стабільності
 
 # --- ГОЛОВНА ЛОГІКА ---
 def check_and_update():
-    """Основний цикл: Selenium -> Парсинг -> Telegram."""
     mem = load_memory()
     current_group = mem.get("group", "3.2")
     msg_ids = mem.get("msg_ids", [])
@@ -106,7 +97,6 @@ def check_and_update():
     last_dates = mem.get("last_dates", [])
     last_imgs = mem.get("last_imgs", [])
     
-    # 1. Перевірка команд через getUpdates
     user_req = False
     try:
         resp = requests.get(f"{API_URL}/getUpdates?offset=-1&limit=5").json()
@@ -117,23 +107,20 @@ def check_and_update():
                 if txt:
                     user_req = True
                     print(f"📩 [Запит] Отримано текст: '{txt}'")
-                    # Пошук групи формату X.X
                     cmd = re.search(r"(\d\.\d)", txt)
                     if cmd: 
                         current_group = cmd.group(1)
-                        hours_by_date = {} # Скидаємо при зміні групи
-                # Підтверджуємо Telegram, що повідомлення отримано
+                        hours_by_date = {}
                 requests.get(f"{API_URL}/getUpdates?offset={upd['update_id'] + 1}")
-    except Exception as e: print(f"⚠️ Помилка Telegram Updates: {e}")
+    except: pass
 
-    # 2. Робота з Selenium
     driver = None
     try:
         options = Options()
         options.add_argument("--headless=new")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         driver.get(URL_SITE)
-        print(f"🌐 [Браузер] Перевірка {URL_SITE} (очікування 15с)...")
+        print(f"🌐 [Браузер] Перевірка {URL_SITE}...")
         time.sleep(15)
         
         full_text = driver.find_element(By.TAG_NAME, "body").text
@@ -142,20 +129,15 @@ def check_and_update():
         current_dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
         blocks = re.split(r"Графік погодинних відключень на", full_text)[1:]
 
-        if not current_dates:
-            print("🛑 [Помилка] Дати на сайті не знайдено.")
-            return
+        if not current_dates: return
 
         new_hours_map = {}
         for i in range(len(current_dates)):
             d_str = current_dates[i]
-            # Безпечно дістаємо блок тексту
-            block_content = blocks[i] if i < len(blocks) else ""
-            txt, dat = extract_group_info(block_content, current_group, hours_by_date.get(d_str))
+            txt, dat = extract_group_info(blocks[i] if i < len(blocks) else "", current_group, hours_by_date.get(d_str))
             dat.update({"site_time": found_times[i] if i < len(found_times) else "00:00", "msg": txt})
             new_hours_map[d_str] = dat
 
-        # --- АНАЛІЗ ЗМІН ---
         schedule_changed = False
         time_or_link_changed = False
         new_appeared = any(d not in last_dates for d in current_dates)
@@ -169,7 +151,6 @@ def check_and_update():
                      (i < len(last_imgs) and current_imgs[i] != last_imgs[i]):
                     time_or_link_changed = True
 
-        # ВИРІШАЛЬНИЙ КРИТЕРІЙ ДЛЯ ПЕРЕНАДСИЛАННЯ
         should_repost = user_req or schedule_changed or new_appeared or not msg_ids or len(msg_ids) != len(current_dates)
 
         if should_repost:
@@ -179,60 +160,38 @@ def check_and_update():
             for i in range(len(current_dates)):
                 if i >= len(current_imgs): break
                 d_str = current_dates[i]
-                
-                # Формуємо текст з гіперпосиланням
                 body = f"📅 <b>{d_str}</b> група {current_group}\n⏱ <i>Станом на {new_hours_map[d_str]['site_time']}</i>\n"
-                body += f"<a href='{current_imgs[i]}'> Графік відключень.</a>\n\n{new_hours_map[d_str]['msg']}"
+                body += f"<a href='{current_imgs[i]}'>Графік відключень.</a>\n\n{new_hours_map[d_str]['msg']}"
                 
-                # ВІДПРАВКА ТА ЛОГУВАННЯ РЕЗУЛЬТАТУ
-                r = requests.post(f"{API_URL}/sendMessage", data={
-                    'chat_id': CHAT_ID, 
-                    'text': body, 
-                    'parse_mode': 'HTML',
-                    'disable_web_page_preview': False
-                }).json()
+                r = requests.post(f"{API_URL}/sendMessage", data={'chat_id': CHAT_ID, 'text': body, 'parse_mode': 'HTML'}).json()
+                print(f"DEBUG SEND: {r}") # ПОВНИЙ ВИВІД ВІДПОВІДІ ТЕЛЕГРАМ
                 
                 if r.get('ok'):
-                    mid = r['result']['message_id']
-                    new_mids.append(mid)
-                    print(f"✅ УСПІХ: Повідомлення надіслано! ID: {mid}")
+                    new_mids.append(r['result']['message_id'])
                 else:
-                    print(f"❌ ПОМИЛКА TELEGRAM: {r.get('description')} (Код: {r.get('error_code')})")
+                    print(f"❌ ПОМИЛКА TELEGRAM: {r.get('description')}")
             
             save_memory(current_group, new_mids, current_imgs, new_hours_map, current_dates)
 
         elif time_or_link_changed:
-            print("✏️ [Редагування] Оновлення тексту в існуючих повідомленнях...")
+            print("✏️ [Редагування] Оновлення тексту...")
             for i in range(len(current_dates)):
                 if i >= len(msg_ids): break
                 d_str = current_dates[i]
                 body = f"📅 <b>{d_str}</b> група {current_group}\n⏱ <i>Станом на {new_hours_map[d_str]['site_time']}</i>\n"
-                body += f"<a href='{current_imgs[i]}'> Графік відключень.</a>\n\n{new_hours_map[d_str]['msg']}"
-                
-                r_edit = requests.post(f"{API_URL}/editMessageText", data={
-                    'chat_id': CHAT_ID, 
-                    'message_id': msg_ids[i], 
-                    'text': body, 
-                    'parse_mode': 'HTML'
-                }).json()
-                
-                if not r_edit.get('ok'):
-                    print(f"⚠️ Помилка редагування: {r_edit.get('description')}")
-            
+                body += f"<a href='{current_imgs[i]}'>Графік відключень.</a>\n\n{new_hours_map[d_str]['msg']}"
+                r_edit = requests.post(f"{API_URL}/editMessageText", data={'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'text': body, 'parse_mode': 'HTML'}).json()
+                print(f"DEBUG EDIT: {r_edit}")
             save_memory(current_group, msg_ids, current_imgs, new_hours_map, current_dates)
         else:
-            print("✅ [Статус] Дані на сайті ідентичні збереженим. Змін немає.")
+            print("✅ [Статус] Без змін.")
 
-    except Exception as e: print(f"💥 Критична помилка виконання: {e}")
+    except Exception as e: print(f"💥 Критична помилка: {e}")
     finally:
         if driver: driver.quit()
 
-# --- ЗАПУСК НА 7 ЦИКЛІВ ---
 if __name__ == "__main__":
-    print(f"🤖 Бот активний (7 циклів). Очікування: 125с.")
     for cycle in range(1):
-        print(f"\n--- [Цикл {cycle + 1} з 7] ---")
+        print(f"\n--- [Цикл {cycle + 1}] ---")
         check_and_update()
-        if cycle < 6:
-            time.sleep(1)
-    print("\n🏁 Роботу завершено.")
+        if cycle < 6: time.sleep(1)
