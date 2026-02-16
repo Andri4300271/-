@@ -171,7 +171,7 @@ def check_and_update():
         if current_variant == 1 and any_site_time_change: should_repost = True
 
         if should_repost:
-            clear_chat_5(msg_ids)
+            ###clear_chat_5(msg_ids)
             new_mids = []
             for d in current_dates:
                 data = new_data_map[d]
