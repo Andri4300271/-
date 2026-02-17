@@ -202,7 +202,7 @@ def check_and_update():
                     img_data = requests.get(urljoin(URL_SITE, current_imgs[i])).content
                     r = requests.post(f"https://api.telegram.org{TOKEN}/sendPhoto", data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML', 'disable_notification': not sound_needed}, files={'photo': ('g.png', io.BytesIO(img_data))}).json()
                 else:
-                    link_text = f'<b><a href="{urljoin(URL_SITE, current_imgs[i])}">Графік відключення.</a></b>'
+                    link_text = f'<b><a href="{urljoin(URL_SITE, current_imgs[i])}">      Графік відключеннь.</a></b>'
                     r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': f"{link_text}\n{cap}", 'parse_mode': 'HTML', 'disable_notification': not sound_needed, 'disable_web_page_preview': False}).json()
                 mid = r.get('result', {}).get('message_id')
                 if mid: new_mids.append(mid)
