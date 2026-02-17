@@ -19,7 +19,6 @@ def load_memory():
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                # Додаємо дефолтні значення, якщо полів немає в файлі
                 if "group" not in data or not data["group"]: data["group"] = "1.1"
                 if "variant" not in data: data["variant"] = 1
                 return data
@@ -33,7 +32,7 @@ def save_memory(group, variant, msg_ids, last_imgs, hours_by_date, last_dates):
             "last_imgs": last_imgs, "hours_by_date": hours_by_date, "last_dates": last_dates
         }, f, ensure_ascii=False)
 
-# --- (Тут ваші функції calculate_duration, format_row, extract_group_info та clear_chat_5 без жодних змін) ---
+# --- МАТЕМАТИЧНІ ОБЧИСЛЕННЯ ---
 def calculate_duration(start, end):
     try:
         fmt = "%H:%M"
@@ -45,6 +44,7 @@ def calculate_duration(start, end):
         return f"{int(s // 3600)} г. {int((s % 3600) // 60)} х."
     except: return ""
 
+# --- ВІЗУАЛІЗАЦІЯ ЗМІН ---
 def format_row(s, e, dur, old_data, is_new_date):
     if is_new_date or not old_data or 'periods' not in old_data:
         return f"   <b>{s} - {e}</b>   ({dur})"
@@ -57,6 +57,7 @@ def format_row(s, e, dur, old_data, is_new_date):
         return f"   <b>{s_disp} - {e_disp}</b>   ({d_disp})"
     return f"   <b>{s} - {e}</b>   ({dur})"
 
+# --- ПАРСИНГ ТА РОЗРАХУНОК ---
 def extract_group_info(text_block, group, old_data=None):
     if not group: return "", {}
     pattern = rf"Група {group}\.(.*?)(?=Група \d\.\d|$)"
@@ -104,6 +105,7 @@ def extract_group_info(text_block, group, old_data=None):
             return "\n".join(res_lines), current_data
     return "", current_data
 
+# --- ОЧИЩЕННЯ ЧАТУ ---
 def clear_chat_5(msg_ids):
     print("🧹 [Дія] Початок повного очищення чату...")
     try:
@@ -116,16 +118,13 @@ def clear_chat_5(msg_ids):
                 requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
     except Exception as e: print(f"⚠️ [Помилка] Очищення чату: {e}")
 
-# --- ГОЛОВНА ЛОГІКА (Зі змінами згідно умов) ---
+# --- ГОЛОВНА ЛОГІКА ---
 def check_and_update():
     print(f"🕒 [{datetime.now().strftime('%H:%M:%S')}] Старт циклу перевірки.")
     mem = load_memory()
-    current_group = mem.get("group", "1.1")
-    current_variant = mem.get("variant", 1)
-    msg_ids = mem.get("msg_ids", [])
-    last_imgs = mem.get("last_imgs", [])
-    hours_by_date = mem.get("hours_by_date", {})
-    last_dates = mem.get("last_dates", [])
+    current_group, current_variant = mem["group"], mem["variant"]
+    msg_ids, last_imgs = mem["msg_ids"], mem["last_imgs"]
+    hours_by_date, last_dates = mem["hours_by_date"], mem["last_dates"]
     
     user_interfered = False
     print("📩 [Дія] Перевірка команд у Telegram...")
@@ -137,17 +136,14 @@ def check_and_update():
                 if msg_text:
                     print(f"💬 [Текст] Отримано запит: '{msg_text}'.")
                     user_interfered = True
-                    # Перевірка варіантів
                     if "/1" in msg_text: current_variant = 1
                     if "/2" in msg_text: current_variant = 2
-                    # Перевірка групи
                     cmd = re.search(r"(\d\.\d)", msg_text)
                     if cmd:
                         new_group = cmd.group(1)
                         if new_group != current_group:
                             print(f"🎯 [Зміна групи] {current_group} -> {new_group}.")
-                            current_group = new_group
-                            hours_by_date = {}
+                            current_group, hours_by_date = new_group, {}
                 requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={upd['update_id'] + 1}")
     except Exception as e: print(f"❌ [Помилка] Telegram API: {e}")
 
@@ -167,21 +163,17 @@ def check_and_update():
         found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
         imgs_elements = driver.find_elements(By.XPATH, "//img[contains(@src, '_GPV-mobile.png')]")
         current_imgs = [img.get_attribute("src") for img in imgs_elements]
-        current_dates = re.findall(r"відключень на (\d{2}\.\d.2}\.\d{4})", full_text)
+        current_dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
         blocks = re.split(r"Графік погодинних відключень на", full_text)[1:]
 
         new_hours_data_map = {}
         for i, b in enumerate(blocks):
             if i >= len(current_dates): break
-            date_str = current_dates[i]
-            site_time = found_times[i] if i < len(found_times) else "00:00"
-            old_d = hours_by_date.get(date_str)
-            txt, dat = extract_group_info(b, current_group, old_d)
-            dat["site_time"] = site_time 
-            dat["full_text_msg"] = txt
+            date_str, site_time = current_dates[i], found_times[i] if i < len(found_times) else "00:00"
+            txt, dat = extract_group_info(b, current_group, hours_by_date.get(date_str))
+            dat["site_time"], dat["full_text_msg"] = site_time, txt
             new_hours_data_map[date_str] = dat
 
-        # Порівняння змін
         any_schedule_change = False
         any_site_time_change = False
         new_graph_appeared = any(d not in last_dates for d in current_dates)
@@ -194,82 +186,48 @@ def check_and_update():
                 if new_hours_data_map[d]["site_time"] != hours_by_date[d].get("site_time"):
                     any_site_time_change = True
 
-        # --- ЛОГІКА ПОРІВНЯННЯ ТА РІШЕННЯ ---
-        any_schedule_change = False
-        any_site_time_change = False
-        new_graph_appeared = any(d not in last_dates for d in current_dates)
-
-        for d in current_dates:
-            if d in hours_by_date:
-                # Зміна годин або статусу світла
-                if (new_hours_data_map[d]["periods"] != hours_by_date[d]["periods"] or 
-                    new_hours_data_map[d]["is_full_light"] != hours_by_date[d].get("is_full_light")):
-                    any_schedule_change = True
-                # Зміна лише часу оновлення на сайті
-                if new_hours_data_map[d]["site_time"] != hours_by_date[d].get("site_time"):
-                    any_site_time_change = True
-
-        # Визначаємо, чи потрібно ПОВНЕ оновлення (видалення старого і новий пост)
-        # 1. Якщо користувач змінив групу/варіант (user_interfered)
-        # 2. Якщо змінився сам графік (any_schedule_change)
-        # 3. Якщо з'явилася нова дата (new_graph_appeared)
-        # 4. Якщо Варіант 1 і змінився час (any_site_time_change) - як було в оригіналі
-        should_full_update = user_interfered or any_schedule_change or new_graph_appeared
-        if current_variant == 1 and any_site_time_change:
-            should_full_update = True
-        
+        should_update = user_interfered or any_schedule_change or new_graph_appeared
+        if current_variant == 1 and any_site_time_change: should_update = True
         sound_needed = user_interfered or any_schedule_change or new_graph_appeared
 
-        if should_full_update:
-            print("🚀 [Дія] Повне оновлення (зміна групи/варіанту або графіка). Надсилання...")
-            ###clear_chat_5(msg_ids)
+        if should_update:
+            print("🚀 [Дія] Виявлено зміни! Надсилання...")
+            clear_chat_5(msg_ids)
             new_mids = []
             for i, date_str in enumerate(current_dates):
                 if i >= len(current_imgs): break
                 data = new_hours_data_map[date_str]
-                # Формуємо заголовок залежно від варіанту
                 cap = f"📅 {date_str} група {current_group}\n⏱ <i>Станом на {data['site_time']}</i>\n{data['full_text_msg']}"
-                
                 if current_variant == 1:
-                    # Варіант 1: Оригінальна логіка з Фото
                     img_data = requests.get(urljoin(URL_SITE, current_imgs[i])).content
-                    r = requests.post(f"https://api.telegram.org{TOKEN}/sendPhoto", 
-                                     data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML', 'disable_notification': not sound_needed}, 
-                                     files={'photo': ('g.png', io.BytesIO(img_data))}).json()
+                    r = requests.post(f"https://api.telegram.org{TOKEN}/sendPhoto", data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML', 'disable_notification': not sound_needed}, files={'photo': ('g.png', io.BytesIO(img_data))}).json()
                 else:
-                    # Варіант 2: Текст + Гіперпосилання
                     link_text = f'<b><a href="{urljoin(URL_SITE, current_imgs[i])}">Графік відключення.</a></b>'
-                    r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", 
-                                     data={'chat_id': CHAT_ID, 'text': f"{link_text}\n{cap}", 'parse_mode': 'HTML', 'disable_notification': not sound_needed, 'disable_web_page_preview': False}).json()
-                
+                    r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': f"{link_text}\n{cap}", 'parse_mode': 'HTML', 'disable_notification': not sound_needed, 'disable_web_page_preview': False}).json()
                 mid = r.get('result', {}).get('message_id')
                 if mid: new_mids.append(mid)
             save_memory(current_group, current_variant, new_mids, current_imgs, new_hours_data_map, current_dates)
 
         elif current_variant == 2 and any_site_time_change:
-            # Тільки якщо Варіант 2 і змінився ТІЛЬКИ час (без зміни графіка і втручання юзера)
-            print("📝 [Дія] Варіант 2: Редагування часу в існуючих повідомленнях...")
+            print("📝 [Дія] Варіант 2: Редагування часу...")
             for i, date_str in enumerate(current_dates):
                 if i < len(msg_ids):
                     data = new_hours_data_map[date_str]
                     link_text = f'<b><a href="{urljoin(URL_SITE, current_imgs[i])}">Графік відключення.</a></b>'
                     new_txt = f"{link_text}\n📅 {date_str} група {current_group}\n⏱ <i>Станом на {data['site_time']}</i>\n{data['full_text_msg']}"
-                    requests.post(f"https://api.telegram.org{TOKEN}/editMessageText", 
-                                 data={'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'text': new_txt, 'parse_mode': 'HTML'})
+                    requests.post(f"https://api.telegram.org{TOKEN}/editMessageText", data={'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'text': new_txt, 'parse_mode': 'HTML'})
             save_memory(current_group, current_variant, msg_ids, current_imgs, new_hours_data_map, current_dates)
 
         elif len(msg_ids) > len(current_imgs):
             print("🗑 [Дія] Видалення застарілого графіка...")
             for _ in range(len(msg_ids) - len(current_imgs)):
                 mid = msg_ids.pop(0)
-                ###requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
+                requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
             save_memory(current_group, current_variant, msg_ids, current_imgs, new_hours_data_map, current_dates)
-        else: 
-            print("✅ [Статус] Дані на сайті ідентичні збереженим.")
+        else: print("✅ [Статус] Дані ідентичні.")
     except Exception as e: print(f"❌ [Помилка] {e}")
     finally:
         if driver: driver.quit()
-    return False
 
 if __name__ == "__main__":
     print("🤖 Бот запущено.")
