@@ -192,7 +192,7 @@ def check_and_update():
 
         if should_update:
             print("🚀 [Дія] Виявлено зміни! Надсилання...")
-            clear_chat_5(msg_ids)
+            ###clear_chat_5(msg_ids)
             new_mids = []
             for i, date_str in enumerate(current_dates):
                 if i >= len(current_imgs): break
@@ -222,7 +222,7 @@ def check_and_update():
             print("🗑 [Дія] Видалення застарілого графіка...")
             for _ in range(len(msg_ids) - len(current_imgs)):
                 mid = msg_ids.pop(0)
-                requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
+                ###requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
             save_memory(current_group, current_variant, msg_ids, current_imgs, new_hours_data_map, current_dates)
         else: print("✅ [Статус] Дані ідентичні.")
     except Exception as e: print(f"❌ [Помилка] {e}")
@@ -231,10 +231,10 @@ def check_and_update():
 
 if __name__ == "__main__":
     print("🤖 Бот запущено.")
-    for cycle in range(1):
+    for cycle in range(5):
         print(f"\n--- [Цикл {cycle + 1} з 5] ---")
         check_and_update()
         if cycle < 4:
             print("⏳ [Очікування] 120 секунд...")
-            time.sleep(1)
+            time.sleep(120)
     print("\n🏁 Роботу завершено.")
