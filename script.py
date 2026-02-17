@@ -194,29 +194,50 @@ def check_and_update():
                 if new_hours_data_map[d]["site_time"] != hours_by_date[d].get("site_time"):
                     any_site_time_change = True
 
-        # Умова оновлення
-        should_update = user_interfered or any_schedule_change or new_graph_appeared
-        # У Варіанті 1 зміна часу теж викликає повне оновлення (як було в оригіналі)
-        if current_variant == 1 and any_site_time_change: should_update = True
+        # --- ЛОГІКА ПОРІВНЯННЯ ТА РІШЕННЯ ---
+        any_schedule_change = False
+        any_site_time_change = False
+        new_graph_appeared = any(d not in last_dates for d in current_dates)
+
+        for d in current_dates:
+            if d in hours_by_date:
+                # Зміна годин або статусу світла
+                if (new_hours_data_map[d]["periods"] != hours_by_date[d]["periods"] or 
+                    new_hours_data_map[d]["is_full_light"] != hours_by_date[d].get("is_full_light")):
+                    any_schedule_change = True
+                # Зміна лише часу оновлення на сайті
+                if new_hours_data_map[d]["site_time"] != hours_by_date[d].get("site_time"):
+                    any_site_time_change = True
+
+        # Визначаємо, чи потрібно ПОВНЕ оновлення (видалення старого і новий пост)
+        # 1. Якщо користувач змінив групу/варіант (user_interfered)
+        # 2. Якщо змінився сам графік (any_schedule_change)
+        # 3. Якщо з'явилася нова дата (new_graph_appeared)
+        # 4. Якщо Варіант 1 і змінився час (any_site_time_change) - як було в оригіналі
+        should_full_update = user_interfered or any_schedule_change or new_graph_appeared
+        if current_variant == 1 and any_site_time_change:
+            should_full_update = True
         
         sound_needed = user_interfered or any_schedule_change or new_graph_appeared
 
-        if should_update:
-            print("🚀 [Дія] Виявлено зміни! Надсилання оновлень...")
+        if should_full_update:
+            print("🚀 [Дія] Повне оновлення (зміна групи/варіанту або графіка). Надсилання...")
             ###clear_chat_5(msg_ids)
             new_mids = []
             for i, date_str in enumerate(current_dates):
                 if i >= len(current_imgs): break
                 data = new_hours_data_map[date_str]
+                # Формуємо заголовок залежно від варіанту
                 cap = f"📅 {date_str} група {current_group}\n⏱ <i>Станом на {data['site_time']}</i>\n{data['full_text_msg']}"
                 
                 if current_variant == 1:
+                    # Варіант 1: Оригінальна логіка з Фото
                     img_data = requests.get(urljoin(URL_SITE, current_imgs[i])).content
                     r = requests.post(f"https://api.telegram.org{TOKEN}/sendPhoto", 
                                      data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML', 'disable_notification': not sound_needed}, 
                                      files={'photo': ('g.png', io.BytesIO(img_data))}).json()
                 else:
-                    # Варіант 2: Текст з гіперпосиланням
+                    # Варіант 2: Текст + Гіперпосилання
                     link_text = f'<b><a href="{urljoin(URL_SITE, current_imgs[i])}">Графік відключення.</a></b>'
                     r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", 
                                      data={'chat_id': CHAT_ID, 'text': f"{link_text}\n{cap}", 'parse_mode': 'HTML', 'disable_notification': not sound_needed, 'disable_web_page_preview': False}).json()
@@ -226,6 +247,7 @@ def check_and_update():
             save_memory(current_group, current_variant, new_mids, current_imgs, new_hours_data_map, current_dates)
 
         elif current_variant == 2 and any_site_time_change:
+            # Тільки якщо Варіант 2 і змінився ТІЛЬКИ час (без зміни графіка і втручання юзера)
             print("📝 [Дія] Варіант 2: Редагування часу в існуючих повідомленнях...")
             for i, date_str in enumerate(current_dates):
                 if i < len(msg_ids):
@@ -251,10 +273,10 @@ def check_and_update():
 
 if __name__ == "__main__":
     print("🤖 Бот запущено.")
-    for cycle in range(5):
+    for cycle in range(1):
         print(f"\n--- [Цикл {cycle + 1} з 5] ---")
         check_and_update()
         if cycle < 4:
             print("⏳ [Очікування] 120 секунд...")
-            time.sleep(120)
+            time.sleep(1)
     print("\n🏁 Роботу завершено.")
