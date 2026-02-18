@@ -168,7 +168,7 @@ def check_and_update():
         options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         driver.get(URL_SITE)
-        time.sleep(10)
+        time.sleep(5)
         
         full_text = driver.find_element(By.TAG_NAME, "body").text
         found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
@@ -203,7 +203,7 @@ def check_and_update():
 
         if should_update:
             print(f"🚀 [Дія] Повне оновлення. Надсилання {len(current_dates)} графіків...")
-            clear_chat_5(msg_ids)
+            ###clear_chat_5(msg_ids)
             new_mids = []
             for i, date_str in enumerate(current_dates):
                 if i >= len(current_imgs): break
@@ -219,7 +219,7 @@ def check_and_update():
                     img_data = requests.get(urljoin(URL_SITE, current_imgs[i])).content
                     r = requests.post(f"https://api.telegram.org{TOKEN}/sendPhoto", data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML', 'disable_notification': not sound_needed}, files={'photo': ('g.png', io.BytesIO(img_data))}).json()
                 else:
-                    link_text = f'<b><a href="{urljoin(URL_SITE, current_imgs[i])}">Графік відключення.</a></b>'
+                    link_text = f'<b><a href="{urljoin(URL_SITE, current_imgs[i])}">      Графік відключення.</a></b>'
                     r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': f"{link_text}\n{cap}", 'parse_mode': 'HTML', 'disable_notification': not sound_needed, 'disable_web_page_preview': False}).json()
                 mid = r.get('result', {}).get('message_id')
                 if mid: new_mids.append(mid)
@@ -241,7 +241,7 @@ def check_and_update():
             print("🗑 [Дія] Видалення застарілого графіка...")
             for _ in range(len(msg_ids) - len(current_imgs)):
                 mid = msg_ids.pop(0)
-                requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
+                ###requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
             save_memory(current_group, current_variant, msg_ids, current_imgs, new_hours_data_map, current_dates)
         else: print("✅ [Статус] Дані ідентичні.")
     except Exception as e: print(f"❌ [Помилка] {e}")
