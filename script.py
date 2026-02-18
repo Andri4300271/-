@@ -36,13 +36,17 @@ def save_memory(group, variant, msg_ids, last_imgs, hours_by_date, last_dates):
 def calculate_duration(start, end):
     try:
         fmt = "%H:%M"
+        # Обробка 24:00 як кінця доби
         end_proc = "23:59" if end == "24:00" else end
         t1, t2 = datetime.strptime(start, fmt), datetime.strptime(end_proc, fmt)
         diff = t2 - t1
         s = diff.total_seconds()
         if end == "24:00": s += 60
+        
+        # Якщо s від'ємне або 0, повертаємо 0 г. 0 х.
+        if s <= 0: return "0 г. 0 х."
         return f"{int(s // 3600)} г. {int((s % 3600) // 60)} х."
-    except: return ""
+    except: return "0 г. 0 х."
 
 # --- ВІЗУАЛІЗАЦІЯ ЗМІН ---
 def format_row(s, e, dur, old_data, is_new_date):
@@ -78,7 +82,7 @@ def extract_group_info(text_block, group, old_data=None):
             was_full_light = old_data.get("is_full_light", False) if old_data else False
             header = "⚠️ <b><u>Планове відключення:</u></b>" if was_full_light and not is_new_date else "⚠️ <b>Планове відключення:</b>"
             res_lines = [header]
-            # 🌑 Початок доби
+            # 🌑 Початок доби (тепер завжди повертає "0 г. 0 х.", якщо немає світла)
             first_p = current_data["periods"][0]
             l_dur = calculate_duration("00:00", first_p["start"])
             current_data["light_before"] = l_dur
@@ -123,7 +127,6 @@ def clear_chat_5(msg_ids):
             print("🗑 Графіків не знайдено в пам'яті, видалення останніх 5 повідомлень.")
             for i in range(last_id, last_id - 6, -1):
                 requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
-        time.sleep(1) # Невелика пауза після очищення
     except Exception as e: print(f"⚠️ [Помилка] Очищення чату: {e}")
 
 # --- ГОЛОВНА ЛОГІКА ---
@@ -165,13 +168,13 @@ def check_and_update():
         options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         driver.get(URL_SITE)
-        time.sleep(10) # Збільшено час очікування для стабільності
+        time.sleep(10)
         
         full_text = driver.find_element(By.TAG_NAME, "body").text
         found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
         imgs_elements = driver.find_elements(By.XPATH, "//img[contains(@src, '_GPV-mobile.png')]")
         current_imgs = [img.get_attribute("src") for img in imgs_elements]
-        current_dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text) # Виправлено regex
+        current_dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
         blocks = re.split(r"Графік погодинних відключень на", full_text)[1:]
 
         new_hours_data_map = {}
@@ -199,7 +202,7 @@ def check_and_update():
         sound_needed = user_interfered or any_schedule_change or new_graph_appeared
 
         if should_update:
-            print(f"🚀 [Дія] Надсилання {len(current_dates)} графіків...")
+            print(f"🚀 [Дія] Повне оновлення. Надсилання {len(current_dates)} графіків...")
             clear_chat_5(msg_ids)
             new_mids = []
             for i, date_str in enumerate(current_dates):
@@ -218,7 +221,6 @@ def check_and_update():
                 else:
                     link_text = f'<b><a href="{urljoin(URL_SITE, current_imgs[i])}">Графік відключення.</a></b>'
                     r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': f"{link_text}\n{cap}", 'parse_mode': 'HTML', 'disable_notification': not sound_needed, 'disable_web_page_preview': False}).json()
-                
                 mid = r.get('result', {}).get('message_id')
                 if mid: new_mids.append(mid)
             save_memory(current_group, current_variant, new_mids, current_imgs, new_hours_data_map, current_dates)
