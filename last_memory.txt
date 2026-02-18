@@ -1,1 +1,1 @@
-{"group": "3.2", "variant": 2, "msg_ids": [899], "last_imgs": ["https://api.loe.lviv.ua/media/69956ac480385_GPV-mobile.png"], "hours_by_date": {"18.02.2026": {"periods": [], "light_before": null, "light_after_last": null, "is_full_light": true, "site_time": "09:31", "full_text_msg": "✅ <b><u>Електроенергія є.</u></b>"}}, "last_dates": ["18.02.2026"]}
+{"group": "3.2", "variant": 2, "msg_ids": [], "last_imgs": [], "hours_by_date": {}, "last_dates": []}
