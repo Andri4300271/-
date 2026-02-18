@@ -168,7 +168,7 @@ def check_and_update():
         options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         driver.get(URL_SITE)
-        time.sleep(5)
+        time.sleep(7)
         
         full_text = driver.find_element(By.TAG_NAME, "body").text
         found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
@@ -250,10 +250,10 @@ def check_and_update():
 
 if __name__ == "__main__":
     print("🤖 Бот запущено.")
-    for cycle in range(5):
-        print(f"\n--- [Цикл {cycle + 1} з 5] ---")
+    for cycle in range(7):
+        print(f"\n--- [Цикл {cycle + 1} з 7] ---")
         check_and_update()
-        if cycle < 4:
+        if cycle < 6:
             print("⏳ [Очікування] 120 секунд...")
-            time.sleep(120)
+            time.sleep(135)
     print("\n🏁 Роботу завершено.")
