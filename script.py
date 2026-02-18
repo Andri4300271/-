@@ -78,14 +78,13 @@ def extract_group_info(text_block, group, old_data=None):
             was_full_light = old_data.get("is_full_light", False) if old_data else False
             header = "⚠️ <b><u>Планове відключення:</u></b>" if was_full_light and not is_new_date else "⚠️ <b>Планове відключення:</b>"
             res_lines = [header]
-            
+            # 💡 Початок доби (завжди)
             first_p = current_data["periods"][0]
             l_dur = calculate_duration("00:00", first_p["start"])
             current_data["light_before"] = l_dur
             old_l = old_data.get("light_before") if old_data else None
             l_disp = f"<u>{l_dur}</u>" if not is_new_date and l_dur != old_l else l_dur
             res_lines.append(f"          💡  <i>{l_disp}</i>")
-            
             prev_end = None
             for i, p in enumerate(current_data["periods"]):
                 if prev_end:
@@ -96,7 +95,7 @@ def extract_group_info(text_block, group, old_data=None):
                     res_lines.append(f"          💡  <i>{l_disp}</i>")
                 res_lines.append(format_row(p["start"], p["end"], p["dur"], old_data, is_new_date))
                 prev_end = p["end"]
-            
+            # 💡 Кінець доби (завжди)
             last_e = current_data["periods"][-1]["end"]
             l_dur = calculate_duration(last_e, "24:00")
             current_data["light_after_last"] = l_dur
@@ -108,21 +107,17 @@ def extract_group_info(text_block, group, old_data=None):
 
 # --- ОЧИЩЕННЯ ЧАТУ ---
 def clear_chat_5(msg_ids):
-    print("🧹 [Дія] Початок очищення чату...")
+    print("🧹 [Дія] Початок повного очищення чату...")
     try:
-        # Якщо є збережені ID графіків, видаляємо саме їх
-        if msg_ids:
-            print(f"🗑 Видалення {len(msg_ids)} існуючих повідомлень з графіками.")
-            for mid in msg_ids:
-                requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
-        else:
-            # Якщо графіків ще не було, видаляємо 5 останніх повідомлень
-            print("🗑 Графіків не знайдено, видалення 5 останніх повідомлень.")
-            r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
-            last_id = r.get('result', {}).get('message_id')
-            if last_id:
-                for i in range(last_id, last_id - 6, -1):
-                    requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
+        # Спочатку видаляємо ті, що в пам'яті
+        for mid in msg_ids:
+            requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
+        # Потім оригінальна логіка з крапкою
+        r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
+        last_id = r.get('result', {}).get('message_id')
+        if last_id:
+            for i in range(last_id, last_id - 6, -1):
+                requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
     except Exception as e: print(f"⚠️ [Помилка] Очищення чату: {e}")
 
 # --- ГОЛОВНА ЛОГІКА ---
