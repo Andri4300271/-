@@ -111,16 +111,16 @@ def clear_chat_5(msg_ids):
         r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
         last_id = r.get('result', {}).get('message_id')
         if not last_id: return
-
         if msg_ids:
             start_id = min(msg_ids)
             print(f"🗑 Видалення повідомлень від ID {start_id} до {last_id}")
             for mid in range(start_id, last_id + 1):
                 requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
         else:
-            print("🗑 Графіків не знайдено в пам'яті, видалення останніх 5 повідомлень.")
+            print("🗑 Графіків не знайдено, видалення останніх 5.")
             for i in range(last_id, last_id - 6, -1):
                 requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': i})
+        time.sleep(1)
     except Exception as e: print(f"⚠️ [Помилка] Очищення чату: {e}")
 
 # --- ГОЛОВНА ЛОГІКА ---
@@ -128,8 +128,8 @@ def check_and_update():
     print(f"🕒 [{datetime.now().strftime('%H:%M:%S')}] Старт циклу перевірки.")
     mem = load_memory()
     current_group, current_variant = mem["group"], mem["variant"]
-    msg_ids, hours_by_date = mem["msg_ids"], mem["hours_by_date"]
-    last_dates = mem["last_dates"]
+    msg_ids, last_imgs = mem["msg_ids"], mem["last_imgs"]
+    hours_by_date, last_dates = mem["hours_by_date"], mem["last_dates"]
     
     user_interfered = False
     print("📩 [Дія] Перевірка команд у Telegram...")
@@ -157,12 +157,11 @@ def check_and_update():
         print(f"🌐 [Дія] Відкриття браузера {URL_SITE}...")
         options = Options()
         options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
         options.add_argument("--window-size=390,1200")
         options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         driver.get(URL_SITE)
-        time.sleep(7)
+        time.sleep(10)
         
         full_text = driver.find_element(By.TAG_NAME, "body").text
         found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
@@ -171,20 +170,19 @@ def check_and_update():
         current_dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
         blocks = re.split(r"Графік погодинних відключень на", full_text)[1:]
 
-        # 1. Перевірка актуальності: перевіряються збережнні дати в повідомленнях
+        # ПЕРЕВІРКА АКТУАЛЬНОСТІ
         today = datetime.now().date()
-        stored_dates_valid = any(datetime.strptime(d, "%d.%m.%Y").date() >= today for d in last_dates)
-        site_dates_valid = any(datetime.strptime(d, "%d.%m.%Y").date() >= today for d in current_dates)
+        site_valid = any(datetime.strptime(d, "%d.%m.%Y").date() >= today for d in current_dates)
+        stored_valid = any(datetime.strptime(d, "%d.%m.%Y").date() >= today for d in last_dates)
 
-        if not site_dates_valid:
+        if not site_valid:
             print("📭 [Статус] На сайті немає актуальних графіків.")
-            # Якщо в чаті ще висять старі графіки або користувач щось написав - шлемо заглушку
-            if stored_dates_valid or user_interfered or last_dates:
+            if (not stored_valid and last_dates) or user_interfered:
                 clear_chat_5(msg_ids)
                 no_graph_msg = "●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●\n‎‎‎‎‎‎‎‎░░ Графіків відключень не має. ░░\n‎‎‎‎‎‎‎‎‎‎‎‎●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●"
                 r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': no_graph_msg}).json()
                 new_mid = r.get('result', {}).get('message_id')
-                save_memory(current_group, current_variant, [new_mid] if new_mid else [], [], {}, [])
+                save_memory(current_group, current_variant, [new_mid] if new_mid else [], last_imgs, hours_by_date, last_dates)
             return
 
         new_hours_data_map = {}
@@ -215,7 +213,6 @@ def check_and_update():
                 old_st = hours_by_date.get(date_str, {}).get("site_time")
                 time_disp = f"<u>{data['site_time']}</u>" if not is_new_date and old_st and data['site_time'] != old_st else data['site_time']
                 cap = f"📅 {date_disp} група {current_group}\n⏱ <i>Станом на {time_disp}</i>\n{data['full_text_msg']}"
-                
                 if current_variant == 1:
                     img_data = requests.get(urljoin(URL_SITE, current_imgs[i])).content
                     r = requests.post(f"https://api.telegram.org{TOKEN}/sendPhoto", data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'HTML', 'disable_notification': not sound_needed}, files={'photo': ('g.png', io.BytesIO(img_data))}).json()
