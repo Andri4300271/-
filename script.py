@@ -190,8 +190,17 @@ def check_and_update():
             if (not stored_valid and last_dates) or user_interfered:
                 print("📢 [Дія] Очищення чату та вивід рамки-заглушки.")
                 clear_chat_5(msg_ids)
+                ###no_graph_msg = "●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●\n‎‎‎‎‎‎‎‎░░ <b>Графіків відключень не має.</b> ░░\n‎‎‎‎‎‎‎‎‎‎‎‎●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●"
                 no_graph_msg = "●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●\n‎‎‎‎‎‎‎‎░░ <b>Графіків відключень не має.</b> ░░\n‎‎‎‎‎‎‎‎‎‎‎‎●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●"
-                r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': no_graph_msg}).json()
+                r = requests.post(
+                    f"https://api.telegram.org{TOKEN}/sendMessage", 
+                    data={
+                        'chat_id': CHAT_ID, 
+                        'text': no_graph_msg, 
+                        'parse_mode': 'HTML'
+                    }
+                ).json()
+                ###r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': no_graph_msg}).json()
                 new_mid = r.get('result', {}).get('message_id')
                 save_memory(current_group, current_variant, [new_mid] if new_mid else [], [], {}, [])
             return
