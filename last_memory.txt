@@ -1,1 +1,1 @@
-{"group": "3.2", "variant": 2, "msg_ids": [915], "last_imgs": [], "hours_by_date": {}, "last_dates": []}
+{"group": "3.2", "variant": 2, "msg_ids": [921], "last_imgs": [], "hours_by_date": {}, "last_dates": []}
