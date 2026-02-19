@@ -190,7 +190,7 @@ def check_and_update():
             if (not stored_valid and last_dates) or user_interfered:
                 print("📢 [Дія] Очищення чату та вивід рамки-заглушки.")
                 clear_chat_5(msg_ids)
-                no_graph_msg = "●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●\n‎‎‎‎‎‎‎‎░░ <b>Графіків відключень не має.</b> ░░\n‎‎‎‎‎‎‎‎‎‎‎‎●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●"
+                no_graph_msg = "●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●\n‎‎‎‎‎‎‎‎░░ Графіків відключень не має. ░░\n‎‎‎‎‎‎‎‎‎‎‎‎●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●"
                 r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': no_graph_msg}).json()
                 new_mid = r.get('result', {}).get('message_id')
                 save_memory(current_group, current_variant, [new_mid] if new_mid else [], [], {}, [])
@@ -263,10 +263,10 @@ def check_and_update():
 
 if __name__ == "__main__":
     print("🤖 Бот запущено. Починаю роботу...")
-    for cycle in range(1):
+    for cycle in range(7):
         print(f"\n--- ЦИКЛ {cycle + 1} З 1 ---")
         check_and_update()
         if cycle < 6:
             print("⏳ [Очікування] 120 секунд до наступної перевірки...")
-            time.sleep(1)
+            time.sleep(135)
     print("\n🏁 [Кінець] Всі цикли виконано.")
