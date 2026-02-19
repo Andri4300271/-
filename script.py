@@ -36,14 +36,11 @@ def save_memory(group, variant, msg_ids, last_imgs, hours_by_date, last_dates):
 def calculate_duration(start, end):
     try:
         fmt = "%H:%M"
-        # Обробка 24:00 як кінця доби
         end_proc = "23:59" if end == "24:00" else end
         t1, t2 = datetime.strptime(start, fmt), datetime.strptime(end_proc, fmt)
         diff = t2 - t1
         s = diff.total_seconds()
         if end == "24:00": s += 60
-        
-        # Якщо s від'ємне або 0, повертаємо 0 г. 0 х.
         if s <= 0: return "0 г. 0 х."
         return f"{int(s // 3600)} г. {int((s % 3600) // 60)} х."
     except: return "0 г. 0 х."
@@ -82,14 +79,12 @@ def extract_group_info(text_block, group, old_data=None):
             was_full_light = old_data.get("is_full_light", False) if old_data else False
             header = "⚠️ <b><u>Планове відключення:</u></b>" if was_full_light and not is_new_date else "⚠️ <b>Планове відключення:</b>"
             res_lines = [header]
-            # 🌑 Початок доби (тепер завжди повертає "0 г. 0 х.", якщо немає світла)
-            first_p = current_data["periods"][0]
+            first_p = current_data["periods"]
             l_dur = calculate_duration("00:00", first_p["start"])
             current_data["light_before"] = l_dur
             old_l = old_data.get("light_before") if old_data else None
             l_disp = f"<u>{l_dur}</u>" if not is_new_date and l_dur != old_l else l_dur
             res_lines.append(f"          💡  <i>{l_disp}</i>")
-            # 💡 Періоди всередині
             prev_end = None
             for i, p in enumerate(current_data["periods"]):
                 if prev_end:
@@ -100,7 +95,6 @@ def extract_group_info(text_block, group, old_data=None):
                     res_lines.append(f"          💡  <i>{l_disp}</i>")
                 res_lines.append(format_row(p["start"], p["end"], p["dur"], old_data, is_new_date))
                 prev_end = p["end"]
-            # 🌕 Кінець доби
             last_e = current_data["periods"][-1]["end"]
             l_dur = calculate_duration(last_e, "24:00")
             current_data["light_after_last"] = l_dur
@@ -177,6 +171,22 @@ def check_and_update():
         current_dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
         blocks = re.split(r"Графік погодинних відключень на", full_text)[1:]
 
+        # 1. Перевірка актуальності: перевіряються збережнні дати в повідомленнях
+        today = datetime.now().date()
+        stored_dates_valid = any(datetime.strptime(d, "%d.%m.%Y").date() >= today for d in last_dates)
+        site_dates_valid = any(datetime.strptime(d, "%d.%m.%Y").date() >= today for d in current_dates)
+
+        if not site_dates_valid:
+            print("📭 [Статус] На сайті немає актуальних графіків.")
+            # Якщо в чаті ще висять старі графіки або користувач щось написав - шлемо заглушку
+            if stored_dates_valid or user_interfered or last_dates:
+                clear_chat_5(msg_ids)
+                no_graph_msg = "●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●\n‎‎‎‎‎‎‎‎░░ Графіків відключень не має. ░░\n‎‎‎‎‎‎‎‎‎‎‎‎●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●"
+                r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': no_graph_msg}).json()
+                new_mid = r.get('result', {}).get('message_id')
+                save_memory(current_group, current_variant, [new_mid] if new_mid else [], [], {}, [])
+            return
+
         new_hours_data_map = {}
         for i, b in enumerate(blocks):
             if i >= len(current_dates): break
@@ -185,25 +195,17 @@ def check_and_update():
             dat["site_time"], dat["full_text_msg"] = site_time, txt
             new_hours_data_map[date_str] = dat
 
-        any_schedule_change = False
-        any_site_time_change = False
+        any_schedule_change = any(d not in hours_by_date or new_hours_data_map[d]["periods"] != hours_by_date[d]["periods"] for d in current_dates)
+        any_site_time_change = any(d in hours_by_date and new_hours_data_map[d]["site_time"] != hours_by_date[d].get("site_time") for d in current_dates)
         new_graph_appeared = any(d not in last_dates for d in current_dates)
-
-        for d in current_dates:
-            if d in hours_by_date:
-                if (new_hours_data_map[d]["periods"] != hours_by_date[d]["periods"] or 
-                    new_hours_data_map[d]["is_full_light"] != hours_by_date[d].get("is_full_light")):
-                    any_schedule_change = True
-                if new_hours_data_map[d]["site_time"] != hours_by_date[d].get("site_time"):
-                    any_site_time_change = True
 
         should_update = user_interfered or any_schedule_change or new_graph_appeared
         if current_variant == 1 and any_site_time_change: should_update = True
         sound_needed = user_interfered or any_schedule_change or new_graph_appeared
 
         if should_update:
-            print(f"🚀 [Дія] Повне оновлення. Надсилання {len(current_dates)} графіків...")
-            ###clear_chat_5(msg_ids)
+            print(f"🚀 [Дія] Надсилання {len(current_dates)} графіків...")
+            clear_chat_5(msg_ids)
             new_mids = []
             for i, date_str in enumerate(current_dates):
                 if i >= len(current_imgs): break
@@ -212,7 +214,6 @@ def check_and_update():
                 date_disp = f"<u>{date_str}</u>" if is_new_date else date_str
                 old_st = hours_by_date.get(date_str, {}).get("site_time")
                 time_disp = f"<u>{data['site_time']}</u>" if not is_new_date and old_st and data['site_time'] != old_st else data['site_time']
-                
                 cap = f"📅 {date_disp} група {current_group}\n⏱ <i>Станом на {time_disp}</i>\n{data['full_text_msg']}"
                 
                 if current_variant == 1:
@@ -224,7 +225,6 @@ def check_and_update():
                 mid = r.get('result', {}).get('message_id')
                 if mid: new_mids.append(mid)
             save_memory(current_group, current_variant, new_mids, current_imgs, new_hours_data_map, current_dates)
-
         elif current_variant == 2 and any_site_time_change:
             print("📝 [Дія] Варіант 2: Редагування часу...")
             for i, date_str in enumerate(current_dates):
@@ -235,13 +235,6 @@ def check_and_update():
                     link_text = f'<b><a href="{urljoin(URL_SITE, current_imgs[i])}">---- Графік відключеннь.</a></b>'
                     new_txt = f"{link_text}\n📅 {date_str} група {current_group}\n⏱ <i>Станом на {time_disp}</i>\n{data['full_text_msg']}"
                     requests.post(f"https://api.telegram.org{TOKEN}/editMessageText", data={'chat_id': CHAT_ID, 'message_id': msg_ids[i], 'text': new_txt, 'parse_mode': 'HTML'})
-            save_memory(current_group, current_variant, msg_ids, current_imgs, new_hours_data_map, current_dates)
-
-        elif len(msg_ids) > len(current_imgs):
-            print("🗑 [Дія] Видалення застарілого графіка...")
-            for _ in range(len(msg_ids) - len(current_imgs)):
-                mid = msg_ids.pop(0)
-                ###requests.post(f"https://api.telegram.org{TOKEN}/deleteMessage", data={'chat_id': CHAT_ID, 'message_id': mid})
             save_memory(current_group, current_variant, msg_ids, current_imgs, new_hours_data_map, current_dates)
         else: print("✅ [Статус] Дані ідентичні.")
     except Exception as e: print(f"❌ [Помилка] {e}")
