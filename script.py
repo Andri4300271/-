@@ -20,10 +20,10 @@ def load_memory():
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if "group" not in data or not data["group"]: data["group"] = "1.1"
-                if "variant" not in data: data["variant"] = 1
+                if "variant" not in data: data["variant"] = 2
                 return data
         except: pass
-    return {"group": "1.1", "variant": 1, "msg_ids": [], "last_imgs": [], "hours_by_date": {}, "last_dates": []}
+    return {"group": "1.1", "variant": 2, "msg_ids": [], "last_imgs": [], "hours_by_date": {}, "last_dates": []}
 
 def save_memory(group, variant, msg_ids, last_imgs, hours_by_date, last_dates):
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
