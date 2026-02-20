@@ -52,7 +52,6 @@ def format_row(s, e, dur, old_data, is_new_date):
     old_periods = old_data['periods']
     exact_match = any(p['start'] == s and p['end'] == e and p['dur'] == dur for p in old_periods)
     if not exact_match:
-        # Підкреслюємо тільки ті частини рядка, які змінилися
         s_disp = f"<u>{s}</u>" if not any(p['start'] == s for p in old_periods) else s
         e_disp = f"<u>{e}</u>" if not any(p['end'] == e for p in old_periods) else e
         d_disp = f"<u>{dur}</u>" if not any(p['dur'] == dur for p in old_periods) else dur
@@ -80,15 +79,12 @@ def extract_group_info(text_block, group, old_data=None):
             was_full_light = old_data.get("is_full_light", False) if old_data else False
             header = "⚠️ <b><u>Планове відключення:</u></b>" if was_full_light and not is_new_date else "⚠️ <b>Планове відключення:</b>"
             res_lines = [header]
-            
-            # Розрахунок світла на початку доби
             first_p = current_data["periods"]
-            l_dur = calculate_duration("00:00", first_p["start"])
+            l_dur = calculate_duration("00:00", first_p[0]["start"])
             current_data["light_before"] = l_dur
             old_l = old_data.get("light_before") if old_data else None
             l_disp = f"<u>{l_dur}</u>" if not is_new_date and l_dur != old_l else l_dur
             res_lines.append(f"          💡  <i>{l_disp}</i>")
-            
             prev_end = None
             for i, p in enumerate(current_data["periods"]):
                 if prev_end:
@@ -99,8 +95,6 @@ def extract_group_info(text_block, group, old_data=None):
                     res_lines.append(f"          💡  <i>{l_disp}</i>")
                 res_lines.append(format_row(p["start"], p["end"], p["dur"], old_data, is_new_date))
                 prev_end = p["end"]
-            
-            # Розрахунок світла в кінці доби
             last_e = current_data["periods"][-1]["end"]
             l_dur = calculate_duration(last_e, "24:00")
             current_data["light_after_last"] = l_dur
@@ -114,7 +108,6 @@ def extract_group_info(text_block, group, old_data=None):
 def clear_chat_5(msg_ids):
     print("🧹 [Дія] Початок повної зачистки чату перед оновленням...")
     try:
-        # Створюємо повідомлення-маркер для видалення
         r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': '.'}).json()
         last_id = r.get('result', {}).get('message_id')
         if not last_id: return
@@ -180,27 +173,29 @@ def check_and_update():
         blocks = re.split(r"Графік погодинних відключень на", full_text)[1:]
         print(f"📊 [Аналіз] На сайті знайдено графіків: {len(current_dates)}.")
 
-        today = datetime.now().date()
+        now_obj = datetime.now()
+        footer_date = now_obj.strftime("%Y.%m.%d")
+        today = now_obj.date()
         site_valid = any(datetime.strptime(d, "%d.%m.%Y").date() >= today for d in current_dates)
         stored_valid = any(datetime.strptime(d, "%d.%m.%Y").date() >= today for d in last_dates)
 
-        # ПЕРЕВІРКА АКТУАЛЬНОСТІ
+        # ПЕРЕВІРКА АКТУАЛЬНОСТІ ТА ЗАГЛУШКА
         if not site_valid:
             print("📭 [Результат] Актуальних графіків на сайті немає.")
-            if (not stored_valid and last_dates) or user_interfered:
-                print("📢 [Дія] Очищення чату та вивід рамки-заглушки.")
+            no_graph_msg = f"●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●\n‎░░  <b>Графіків відключень не має.</b> ░░\n●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●\n                    {footer_date}"
+            
+            if msg_ids and not stored_valid:
+                print("📝 [Дія] Оновлення дати у існуючій заглушці.")
+                requests.post(f"https://api.telegram.org{TOKEN}/editMessageText", data={
+                    'chat_id': CHAT_ID, 'message_id': msg_ids[0], 'text': no_graph_msg, 'parse_mode': 'HTML'
+                })
+                save_memory(current_group, current_variant, msg_ids, [], {}, [])
+            elif (not stored_valid and last_dates) or user_interfered or not msg_ids:
+                print("📢 [Дія] Очищення чату та вивід нової заглушки.")
                 clear_chat_5(msg_ids)
-                ###no_graph_msg = "●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●\n‎‎‎‎‎‎‎‎░░ <b>Графіків відключень не має.</b> ░░\n‎‎‎‎‎‎‎‎‎‎‎‎●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●"
-                no_graph_msg = "●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●\n‎‎‎‎‎‎‎‎░░  <b>Графіків відключень не має.</b> ░░\n‎‎‎‎‎‎‎‎‎‎‎‎●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●"
-                r = requests.post(
-                    f"https://api.telegram.org{TOKEN}/sendMessage", 
-                    data={
-                        'chat_id': CHAT_ID, 
-                        'text': no_graph_msg, 
-                        'parse_mode': 'HTML'
-                    }
-                ).json()
-                ###r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': no_graph_msg}).json()
+                r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={
+                    'chat_id': CHAT_ID, 'text': no_graph_msg, 'parse_mode': 'HTML'
+                }).json()
                 new_mid = r.get('result', {}).get('message_id')
                 save_memory(current_group, current_variant, [new_mid] if new_mid else [], [], {}, [])
             return
