@@ -79,12 +79,14 @@ def extract_group_info(text_block, group, old_data=None):
             was_full_light = old_data.get("is_full_light", False) if old_data else False
             header = "⚠️ <b><u>Планове відключення:</u></b>" if was_full_light and not is_new_date else "⚠️ <b>Планове відключення:</b>"
             res_lines = [header]
+            
             first_p = current_data["periods"]
-            l_dur = calculate_duration("00:00", first_p[0]["start"])
+            l_dur = calculate_duration("00:00", first_p["start"])
             current_data["light_before"] = l_dur
             old_l = old_data.get("light_before") if old_data else None
             l_disp = f"<u>{l_dur}</u>" if not is_new_date and l_dur != old_l else l_dur
             res_lines.append(f"          💡  <i>{l_disp}</i>")
+            
             prev_end = None
             for i, p in enumerate(current_data["periods"]):
                 if prev_end:
@@ -95,6 +97,7 @@ def extract_group_info(text_block, group, old_data=None):
                     res_lines.append(f"          💡  <i>{l_disp}</i>")
                 res_lines.append(format_row(p["start"], p["end"], p["dur"], old_data, is_new_date))
                 prev_end = p["end"]
+            
             last_e = current_data["periods"][-1]["end"]
             l_dur = calculate_duration(last_e, "24:00")
             current_data["light_after_last"] = l_dur
@@ -184,18 +187,23 @@ def check_and_update():
             print("📭 [Результат] Актуальних графіків на сайті немає.")
             no_graph_msg = f"●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●\n‎░░  <b>Графіків відключень не має.</b> ░░\n●▬▬▬▬▬▬ஜ۩۞۩ஜ▬▬▬▬▬▬●\n                        {footer_date}"
             
-            if msg_ids and not stored_valid:
-                print("📝 [Дія] Оновлення дати у існуючій заглушці.")
-                requests.post(f"https://api.telegram.org{TOKEN}/editMessageText", data={
-                    'chat_id': CHAT_ID, 'message_id': msg_ids[0], 'text': no_graph_msg, 'parse_mode': 'HTML'
-                })
-                save_memory(current_group, current_variant, msg_ids, [], {}, [])
-            elif (not stored_valid and last_dates) or user_interfered or not msg_ids:
-                print("📢 [Дія] Очищення чату та вивід нової заглушки.")
+            # Якщо користувач написав повідомлення — ЗАВЖДИ повна зачистка
+            if user_interfered:
+                print("📢 [Дія] Запит користувача: повне очищення та нова заглушка.")
                 clear_chat_5(msg_ids)
-                r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={
-                    'chat_id': CHAT_ID, 'text': no_graph_msg, 'parse_mode': 'HTML'
-                }).json()
+                r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': no_graph_msg, 'parse_mode': 'HTML'}).json()
+                new_mid = r.get('result', {}).get('message_id')
+                save_memory(current_group, current_variant, [new_mid] if new_mid else [], [], {}, [])
+            # Якщо заглушка вже є, а дані старі — оновлюємо дату в ній
+            elif msg_ids and not stored_valid:
+                print("📝 [Дія] Оновлення дати у існуючій заглушці.")
+                requests.post(f"https://api.telegram.org{TOKEN}/editMessageText", data={'chat_id': CHAT_ID, 'message_id': msg_ids[0] if isinstance(msg_ids, list) else msg_ids, 'text': no_graph_msg, 'parse_mode': 'HTML'})
+                save_memory(current_group, current_variant, msg_ids, [], {}, [])
+            # В інших випадках (перший запуск тощо) — шлемо нову
+            elif (not stored_valid and last_dates) or not msg_ids:
+                print("📢 [Дія] Вивід рамки-заглушки.")
+                clear_chat_5(msg_ids)
+                r = requests.post(f"https://api.telegram.org{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': no_graph_msg, 'parse_mode': 'HTML'}).json()
                 new_mid = r.get('result', {}).get('message_id')
                 save_memory(current_group, current_variant, [new_mid] if new_mid else [], [], {}, [])
             return
@@ -216,7 +224,7 @@ def check_and_update():
         if current_variant == 1 and any_site_time_change: should_update = True
 
         if should_update:
-            print("🚀 [Дія] Помічено зміни! Виконуємо повне оновлення з очищенням.")
+            print("🚀 [Дія] Помічено зміни або запит! Виконуємо повне оновлення з очищенням.")
             clear_chat_5(msg_ids)
             new_mids = []
             for i, date_str in enumerate(current_dates):
