@@ -80,12 +80,14 @@ def extract_group_info(text_block, group, old_data=None):
             header = "⚠️ <b><u>Планове відключення:</u></b>" if was_full_light and not is_new_date else "⚠️ <b>Планове відключення:</b>"
             res_lines = [header]
             
-            first_p = current_data["periods"]
+            # ВИПРАВЛЕНО: беремо перший елемент списку [0]
+            first_p = current_data["periods"][0] 
             l_dur = calculate_duration("00:00", first_p["start"])
             current_data["light_before"] = l_dur
             old_l = old_data.get("light_before") if old_data else None
             l_disp = f"<u>{l_dur}</u>" if not is_new_date and l_dur != old_l else l_dur
             res_lines.append(f"          💡  <i>{l_disp}</i>")
+
             
             prev_end = None
             for i, p in enumerate(current_data["periods"]):
