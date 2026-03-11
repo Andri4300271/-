@@ -1,1 +1,1 @@
-{"group": "6.0", "variant": 2, "msg_ids": [938], "last_imgs": [], "hours_by_date": {}, "last_dates": []}
+{"group": "3.2", "variant": 2, "msg_ids": [940], "last_imgs": ["https://api.loe.lviv.ua/media/69b15663081f2_GPV-mobile.png"], "hours_by_date": {}, "last_dates": []}
