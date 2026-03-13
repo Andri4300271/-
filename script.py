@@ -144,7 +144,7 @@ def check_and_update():
     user_interfered = False
 
 
-        print("📩 [Крок 1] Перевірка нових повідомлень...")
+    print("📩 [Крок 1] Перевірка нових повідомлень...")
     try:
         # Останній ID від бота
         last_bot_mid = max(msg_ids) if msg_ids and isinstance(msg_ids, list) else (msg_ids if isinstance(msg_ids, int) else 0)
