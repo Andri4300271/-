@@ -146,7 +146,7 @@ def check_and_update():
 
 
 
-        print("📩 [Крок 1] Перевірка повідомлень...")
+    print("📩 [Крок 1] Перевірка повідомлень...")
     try:
         # Визначаємо останній ID від бота
         last_bot_mid = max(msg_ids) if msg_ids and isinstance(msg_ids, list) else (msg_ids if isinstance(msg_ids, int) else 0)
