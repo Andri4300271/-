@@ -153,7 +153,7 @@ def check_and_update():
         if not TOKEN.startswith("bot"): 
             print("⚠️ УВАГА: TOKEN має починатися з 'bot...' в URL запиту!")
             
-        res_raw = requests.get(f"https://telegram.org{TOKEN}/getUpdates?limit=50&offset=-50")
+        res_raw = requests.get(f"https://telegram.org/bot{TOKEN}/getUpdates?limit=50&offset=-50")
         if res_raw.status_code == 200:
             res = res_raw.json()
             if res.get('result'):
