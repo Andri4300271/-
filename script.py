@@ -152,7 +152,7 @@ def check_and_update():
         last_bot_mid = max(msg_ids) if msg_ids and isinstance(msg_ids, list) else (msg_ids if isinstance(msg_ids, int) else 0)
         
         url = f"https://api.telegram.org{TOKEN}/getUpdates"
-        resp = requests.get(url, params={'limit': 20, 'offset': -20}).json()
+        resp = requests.get(url, params={'limit': 10, 'offset': -10}).json()
 
         if resp.get('result'):
             for upd in resp['result']:
