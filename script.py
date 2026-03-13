@@ -146,54 +146,49 @@ def check_and_update():
 
 
 
-    print("📩 [Крок 1] Перевірка нових повідомлень...")
+        print("📩 [Крок 1] Перевірка повідомлень...")
     try:
         # Визначаємо останній ID від бота
         last_bot_mid = max(msg_ids) if msg_ids and isinstance(msg_ids, list) else (msg_ids if isinstance(msg_ids, int) else 0)
-
-        # ФОРМУЄМО URL (TOKEN вже містить /bot...)
-        # Використовуємо ПОВНИЙ домен api.telegram.org
-        url_get = f"https://api.telegram.org{TOKEN}/getUpdates"
         
-        # Робимо запит з параметрами
-        resp = requests.get(url_get, params={'limit': 20, 'offset': -20}, timeout=10)
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get('result'):
-                for upd in data['result']:
-                    msg_obj = upd.get('message', {})
-                    m_text = msg_obj.get('text', '').strip()
-                    m_id = msg_obj.get('message_id', 0)
+        url = f"https://api.telegram.org{TOKEN}/getUpdates"
+        resp = requests.get(url, params={'limit': 20, 'offset': -20}).json()
 
-                    # ЧИСТИМО ЧАТ: якщо є БУДЬ-ЯКЕ повідомлення після бота
-                    if m_id > last_bot_mid:
-                        user_interfered = True
-                        print(f"🧹 [Дія] Помічено активність (ID: {m_id})")
+        if resp.get('result'):
+            for upd in resp['result']:
+                msg_obj = upd.get('message', {})
+                m_text = msg_obj.get('text', '').strip()
+                m_id = msg_obj.get('message_id', 0)
+
+                # Будь-яка активність після бота активує повну зачистку чату
+                if m_id > last_bot_mid:
+                    user_interfered = True
+                    
+                    # Зміна налаштувань тільки за суворими командами з "/"
+                    if m_text.startswith("/"):
+                        if m_text == "/1": 
+                            current_variant = 1
+                            print("🔄 [Зміна] Обрано ВАРІАНТ 1 (Фото).")
+                        elif m_text == "/2": 
+                            current_variant = 2
+                            print("🔄 [Зміна] Обрано ВАРІАНТ 2 (Текст).")
                         
-                        # МІНЯЄМО НАЛАШТУВАННЯ: тільки за суворими командами
-                        if m_text.startswith("/"):
-                            if m_text == "/1": current_variant = 1
-                            elif m_text == "/2": current_variant = 2
-                            
-                            g_match = re.search(r"^/(\d\.\d)$", m_text)
-                            if g_match:
-                                current_group = g_match.group(1)
-                                # Скидаємо пам'ять для нової групи
-                                hours_by_date, last_dates = {}, []
-                
-                # Підтверджуємо отримання (щоб не читати старі повідомлення)
-                l_upd = data['result'][-1]['update_id']
-                requests.get(url_get, params={'offset': l_upd + 1})
-        else:
-            print(f"❌ [Помилка] Код {resp.status_code}. URL: {url_get}")
+                        g_match = re.search(r"^/(\d\.\d)$", m_text)
+                        if g_match:
+                            current_group = g_match.group(1)
+                            hours_by_date, last_dates = {}, []
+                            print(f"🎯 [Зміна] Обрано ГРУПУ {current_group}. Пам'ять скинуто.")
+                    else:
+                        print(f"🧹 [Дія] Помічено звичайний текст: '{m_text}'. Чат буде очищено.")
+
+            # Підтверджуємо отримання, щоб не обробляти ці повідомлення знову
+            l_upd = resp['result'][-1]['update_id']
+            requests.get(url, params={'offset': l_upd + 1})
 
         save_memory(current_group, current_variant, msg_ids, last_imgs, hours_by_date, last_dates)
     except Exception as e:
         print(f"⚠️ [Крок 1] Помилка: {e}")
 
-    
-    
     
 
     
