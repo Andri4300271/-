@@ -144,49 +144,42 @@ def check_and_update():
     user_interfered = False
 
 
+    # --- КРОК 1: ПЕРЕВІРКА КОМАНД ---
     print("📩 [Крок 1] Перевірка нових команд у Telegram-боті...")
-    # Визначаємо останній ID повідомлення від бота
-    last_bot_mid = 0
-    if msg_ids:
-        last_bot_mid = max(msg_ids) if isinstance(msg_ids, list) else msg_ids
+    last_bot_mid = max(msg_ids) if msg_ids and isinstance(msg_ids, list) else (msg_ids if isinstance(msg_ids, int) else 0)
 
     try:
-        # Отримуємо до 10 останніх оновлень
-        res = requests.get(f"https://telegram.org{TOKEN}/getUpdates?limit=10&offset=-10").json()
-        
-        if res.get('result'):
-            for upd in res['result']:
-                msg_obj = upd.get('message', {})
-                msg_text = msg_obj.get('text', '').strip()
-                msg_id = msg_obj.get('message_id', 0)
+        # Додаємо базову перевірку проксі або формату токена
+        if not TOKEN.startswith("bot"): 
+            print("⚠️ УВАГА: TOKEN має починатися з 'bot...' в URL запиту!")
+            
+        res_raw = requests.get(f"https://telegram.org{TOKEN}/getUpdates?limit=50&offset=-50")
+        if res_raw.status_code == 200:
+            res = res_raw.json()
+            if res.get('result'):
+                for upd in res['result']:
+                    msg_obj = upd.get('message', {})
+                    msg_text = msg_obj.get('text', '').strip()
+                    msg_id = msg_obj.get('message_id', 0)
 
-                # Аналізуємо тільки нові команди, що починаються з "/"
-                if msg_id > last_bot_mid and msg_text.startswith("/"):
-                    user_interfered = True
+                    # УМОВА: Тільки нові повідомлення після бота і ТІЛЬКИ з "/"
+                    if msg_id > last_bot_mid and msg_text.startswith("/"):
+                        user_interfered = True
+                        if msg_text == "/1": current_variant = 1
+                        elif msg_text == "/2": current_variant = 2
+                        
+                        group_match = re.search(r"^/(\d\.\d)$", msg_text)
+                        if group_match:
+                            new_group = group_match.group(1)
+                            if new_group != current_group:
+                                current_group, hours_by_date, last_dates = new_group, {}, []
                     
-                    # 1. Перевірка на варіант: /1 або /2
-                    if msg_text == "/1": 
-                        current_variant = 1
-                    elif msg_text == "/2": 
-                        current_variant = 2
-                    
-                    # 2. Перевірка на групу: /X.X (наприклад /3.2)
-                    group_match = re.search(r"^/(\d\.\d)$", msg_text)
-                    if group_match:
-                        new_group = group_match.group(1)
-                        if new_group != current_group:
-                            current_group = new_group
-                            # Якщо група змінилася, старі дані годин стають неактуальними
-                            hours_by_date, last_dates = {}, []
-
-                # Обов'язково підтверджуємо оновлення в API
-                requests.get(f"https://telegram.org{TOKEN}/getUpdates?offset={upd['update_id'] + 1}")
-
-            if user_interfered:
-                print(f"⚙️ [Налаштування] Після обробки черги: ГРУПА {current_group}, ВАРІАНТ {current_variant}")
-
-        save_memory(current_group, current_variant, msg_ids, last_imgs, hours_by_date, last_dates)
-    except Exception as e: print(f"❌ [Помилка] Перевірка команд: {e}")
+                    # Підтверджуємо, щоб черга не забивалася
+                    requests.get(f"https://telegram.org{TOKEN}/getUpdates?offset={upd['update_id'] + 1}")
+        else:
+            print(f"⚠️ Telegram повернув помилку: {res_raw.status_code}")
+    except Exception as e: 
+        print(f"❌ [Помилка] Перевірка команд: {e}")
 
 
     driver = None
@@ -201,46 +194,46 @@ def check_and_update():
         #time.sleep(10)
 
 
-# ... усередині check_and_update():
-        print(f"🌐 [Крок 2] Запуск браузера та завантаження {URL_SITE}...")
-        # ... налаштування options та driver ...
+    # --- КРОК 2: ЗАВАНТАЖЕННЯ САЙТУ ---
+    driver = None
+    try:
+        # ... налаштування options ...
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        print(f"🌐 [Крок 2] Завантаження {URL_SITE}...")
         driver.get(URL_SITE)
-
+        
+        site_valid = False
         content_found = False
-        for attempt in range(2):  # Робимо 2 спроби (основна + 1 перезавантаження)
+
+        for attempt in range(2):
             try:
-                # Чекаємо до 15 секунд, поки на сторінці з'явиться текст "Графік погодинних відключень"
-                wait = WebDriverWait(driver, 15)
-                # Чекаємо появу body
-                wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                
-                # Перевірка на ключові маркери (графіки + Укренерго)
-                def check_content(d):
-                    t = d.find_element(By.TAG_NAME, "body").text
-                    return "відключень на" in t.lower() and 'Укренерго' in t.lower()
-
-                wait.until(check_content)
+                # 1. Чекаємо "відключень на" 15 секунд
+                WebDriverWait(driver, 15).until(
+                    lambda d: "відключень на" in d.find_element(By.TAG_NAME, "body").text.lower()
+                )
+                site_valid = True
                 content_found = True
-                print(f"✅ [Сайт] Дані знайдено на спробі {attempt + 1}.")
-                break 
+                print(f"✅ [Успіх] Графіки знайдено (спроба {attempt + 1}).")
+                break
             except TimeoutException:
-                if attempt == 0:
-                    print("🔄 [Таймаут] Потрібний контент не знайдено. Перезавантажую сторінку...")
-                    driver.refresh()
-                    time.sleep(3) # Коротка пауза після рефрешу
+                # 2. Якщо графіків немає, перевіряємо "НЕК "Укренерго""
+                full_text = driver.find_element(By.TAG_NAME, "body").text
+                if 'НЕК "Укренерго"' in full_text:
+                    site_valid = False # Сайт живий, графіків просто немає
+                    content_found = True
+                    print(f"ℹ️ [Сайт] Графіки відсутні, але сторінка завантажена (є 'Укренерго').")
+                    break
                 else:
-                    print("⚠️ [Помилка] Навіть після перезавантаження дані не з'явилися.")
+                    # 3. Якщо нічого немає — рефреш
+                    if attempt == 0:
+                        print("🔄 [Помилка] Немає ні графіків, ні 'Укренерго'. Перезавантажую...")
+                        driver.refresh()
+                        time.sleep(5)
+                    else:
+                        print("🛑 [Стоп] Сайт не завантажився навіть після рефрешу.")
+                        return # Вихід із функції (цикл зупиниться)
 
-        if not content_found:
-            # Якщо контент не знайдено, перевіряємо чи є хоча б текст про відсутність графіків
-            full_text = driver.find_element(By.TAG_NAME, "body").text
-            if "графік відключень відсутній" in full_text.lower():
-                print("ℹ️ [Сайт] Офіційне повідомлення: графіків наразі немає.")
-            else:
-                print("🛑 [Стоп] Сторінка не валідна. Перериваємо цикл.")
-                return 
-
-        # Далі йде ваш парсинг full_text = driver.find_element(By.TAG_NAME, "body").text ...
+        if not content_found: return
 
 
         full_text = driver.find_element(By.TAG_NAME, "body").text
