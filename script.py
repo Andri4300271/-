@@ -145,7 +145,7 @@ def check_and_update():
 
 
 
-
+    user_commands_log = [] # Список для збору текстів користувача
     print("📩 [Крок 1] Перевірка повідомлень...")
     try:
         # Визначаємо останній ID від бота
@@ -163,6 +163,7 @@ def check_and_update():
                 # Будь-яка активність після бота активує повну зачистку чату
                 if m_id > last_bot_mid:
                     user_interfered = True
+                    user_commands_log.append(f"'{m_text}'") # Фіксуємо текст для звіту
                     
                     # Зміна налаштувань тільки за суворими командами з "/"
                     if m_text.startswith("/"):
@@ -188,7 +189,7 @@ def check_and_update():
         save_memory(current_group, current_variant, msg_ids, last_imgs, hours_by_date, last_dates)
     except Exception as e:
         print(f"⚠️ [Крок 1] Помилка: {e}")
-
+    
     
 
     
@@ -302,7 +303,30 @@ def check_and_update():
         if current_variant == 1 and any_site_time_change: should_update = True
 
         if should_update:
-            print("🚀 [Дія] Помічено зміни або запит! Виконуємо повне оновлення з очищенням.")
+            #print("🚀 [Дія] Помічено зміни або запит! Виконуємо повне оновлення з очищенням.")
+
+
+        # Формуємо детальний звіт для терміналу
+        update_reasons = []
+        if user_interfered: 
+            cmds_str = ", ".join(user_commands_log)
+            update_reasons.append(f"Запит користувача: [{cmds_str}]")
+        
+        if any_schedule_change: 
+            update_reasons.append("Зміна в годинах відключень")
+        
+        if new_graph_appeared: 
+            update_reasons.append("Поява графіка на нову дату")
+            
+        if current_variant == 1 and any_site_time_change: 
+            update_reasons.append("Оновлення часу 'станом на' (режим Фото)")
+
+        if should_update:
+            print(f"🚀 [Дія] ПОВНЕ ОНОВЛЕННЯ. Причини: {'; '.join(update_reasons)}.")
+            # ... далі clear_chat_5 та надсилання ...
+
+
+            
             clear_chat_5(msg_ids)
             new_mids = []
             for i, date_str in enumerate(current_dates):
