@@ -196,10 +196,10 @@ def check_and_update():
 
     # --- КРОК 2: ЗАВАНТАЖЕННЯ САЙТУ ---
     #driver = None
-    try:
-        # ... налаштування options ...
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-        print(f"🌐 [Крок 2] Завантаження {URL_SITE}...")
+    #try:
+    #    # ... налаштування options ...
+    #    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    #    print(f"🌐 [Крок 2] Завантаження {URL_SITE}...")
         driver.get(URL_SITE)
         
         site_valid = False
