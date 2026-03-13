@@ -195,7 +195,7 @@ def check_and_update():
 
 
     # --- КРОК 2: ЗАВАНТАЖЕННЯ САЙТУ ---
-    driver = None
+    #driver = None
     try:
         # ... налаштування options ...
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
