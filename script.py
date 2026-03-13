@@ -144,55 +144,53 @@ def check_and_update():
     user_interfered = False
 
 
-
     print("📩 [Крок 1] Перевірка нових повідомлень...")
     try:
-        # Визначаємо останній ID від бота для порівняння
+        # Визначаємо останній ID від бота
         last_bot_mid = max(msg_ids) if msg_ids and isinstance(msg_ids, list) else (msg_ids if isinstance(msg_ids, int) else 0)
         
-        # Робимо запит до Telegram
-        resp = requests.get(f"https://telegram.org{TOKEN}/getUpdates?offset=-10&limit=20")
+        # Робимо запит безпосередньо
+        url = f"https://telegram.org{TOKEN}/getUpdates?limit=20&offset=-20"
+        resp = requests.get(url)
         
-        # Перевіряємо, чи відповідь успішна (код 200)
+        # Перевірка: якщо не 200, то навіть не намагаємось читати дані
         if resp.status_code == 200:
-            data = resp.json() # Тепер .json() не видасть помилку 1:1
+            try:
+                data = resp.json()
+            except:
+                print("⚠️ [Крок 1] Отримано не JSON. Пропускаємо.")
+                data = {}
+
             if data.get('result'):
                 for upd in data['result']:
                     msg_obj = upd.get('message', {})
-                    msg_text = msg_obj.get('text', '').strip()
-                    msg_id = msg_obj.get('message_id', 0)
+                    m_text = msg_obj.get('text', '').strip()
+                    m_id = msg_obj.get('message_id', 0)
 
-                    # УМОВА 1: Будь-яке нове повідомлення від вас (навіть без "/") — активує очищення
-                    if msg_id > last_bot_mid:
+                    # 1. ЧИСТИМО ЧАТ: якщо є БУДЬ-ЯКЕ нове повідомлення (навіть "привіт")
+                    if m_id > last_bot_mid:
                         user_interfered = True
-                        print(f"🧹 [Очищення] Помічено активність: ID {msg_id}")
-
-                        # УМОВА 2: Зміна налаштувань тільки за суворим форматом "/"
-                        if msg_text.startswith("/"):
-                            if msg_text == "/1": 
-                                current_variant = 1
-                                print("🔄 [Зміна] Варіант 1")
-                            elif msg_text == "/2": 
-                                current_variant = 2
-                                print("🔄 [Зміна] Варіант 2")
+                        
+                        # 2. МІНЯЄМО НАЛАШТУВАННЯ: тільки якщо це сувора команда з "/"
+                        if m_text.startswith("/"):
+                            if m_text == "/1": current_variant = 1
+                            elif m_text == "/2": current_variant = 2
                             
-                            # Пошук групи (тільки /X.X)
-                            group_match = re.search(r"^/(\d\.\d)$", msg_text)
-                            if group_match:
-                                new_group = group_match.group(1)
+                            g_match = re.search(r"^/(\d\.\d)$", m_text)
+                            if g_match:
+                                new_group = g_match.group(1)
                                 if new_group != current_group:
-                                    print(f"🎯 [Зміна] Група {new_group}")
                                     current_group, hours_by_date, last_dates = new_group, {}, []
                 
-                # Підтверджуємо отримання (offset), щоб Telegram не надсилав старі повідомлення знову
-                last_upd_id = data['result'][-1]['update_id']
-                requests.get(f"https://telegram.org{TOKEN}/getUpdates?offset={last_upd_id + 1}")
+                # Підтверджуємо отримання через останній update_id
+                l_upd = data['result'][-1]['update_id']
+                requests.get(f"https://telegram.org{TOKEN}/getUpdates?offset={l_upd + 1}")
         else:
-            print(f"⚠️ [Крок 1] Telegram API недоступний (код {resp.status_code}). Пропускаємо.")
-            
+            print(f"⚠️ [Крок 1] Помилка сервера Telegram: {resp.status_code}")
+
         save_memory(current_group, current_variant, msg_ids, last_imgs, hours_by_date, last_dates)
-    except Exception as e: 
-        print(f"⚠️ [Крок 1] Тимчасова затримка: {e}")
+    except Exception as e:
+        print(f"⚠️ [Крок 1] Затримка (код продовжує роботу): {e}")
 
     
 
