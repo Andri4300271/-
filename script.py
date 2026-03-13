@@ -194,7 +194,7 @@ def check_and_update():
     
     driver = None
     try:
-        print(f"🌐 [Крок 2] Запуск браузера та завантаження {URL_SITE}...")
+        print(f"🌐 [Крок 2] Запуск браузера та завантаження {URL_SITE} ...")
         options = Options()
         options.add_argument("--headless=new")
         options.add_argument("--window-size=390,1200")
