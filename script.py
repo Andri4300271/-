@@ -138,26 +138,52 @@ def check_and_update():
     hours_by_date, last_dates = mem["hours_by_date"], mem["last_dates"]
     
     user_interfered = False
+
+
     print("📩 [Крок 1] Перевірка нових команд у Telegram-боті...")
+    # Визначаємо останній ID повідомлення від бота
+    last_bot_mid = 0
+    if msg_ids:
+        last_bot_mid = max(msg_ids) if isinstance(msg_ids, list) else msg_ids
+
     try:
-        res = requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset=-1&limit=10").json()
+        # Отримуємо до 10 останніх оновлень
+        res = requests.get(f"https://telegram.org{TOKEN}/getUpdates?limit=10&offset=-10").json()
+        
         if res.get('result'):
             for upd in res['result']:
-                msg_text = upd.get('message', {}).get('text', '')
-                if msg_text:
-                    print(f"💬 [Текст] Отримано запит користувача: '{msg_text}'.")
+                msg_obj = upd.get('message', {})
+                msg_text = msg_obj.get('text', '').strip()
+                msg_id = msg_obj.get('message_id', 0)
+
+                # Аналізуємо тільки нові команди, що починаються з "/"
+                if msg_id > last_bot_mid and msg_text.startswith("/"):
                     user_interfered = True
-                    if "/1" in msg_text: current_variant = 1; print("🔄 [Зміна] Обрано ВАРІАНТ 1 (Фото).")
-                    if "/2" in msg_text: current_variant = 2; print("🔄 [Зміна] Обрано ВАРІАНТ 2 (Текст).")
-                    cmd = re.search(r"(\d\.\d)", msg_text)
-                    if cmd:
-                        new_group = cmd.group(1)
+                    
+                    # 1. Перевірка на варіант: /1 або /2
+                    if msg_text == "/1": 
+                        current_variant = 1
+                    elif msg_text == "/2": 
+                        current_variant = 2
+                    
+                    # 2. Перевірка на групу: /X.X (наприклад /3.2)
+                    group_match = re.search(r"^/(\d\.\d)$", msg_text)
+                    if group_match:
+                        new_group = group_match.group(1)
                         if new_group != current_group:
-                            print(f"🎯 [Зміна] Нова група: {new_group}. Очищаємо пам'ять дат.")
-                            current_group, hours_by_date, last_dates = new_group, {}, []
-                requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={upd['update_id'] + 1}")
+                            current_group = new_group
+                            # Якщо група змінилася, старі дані годин стають неактуальними
+                            hours_by_date, last_dates = {}, []
+
+                # Обов'язково підтверджуємо оновлення в API
+                requests.get(f"https://telegram.org{TOKEN}/getUpdates?offset={upd['update_id'] + 1}")
+
+            if user_interfered:
+                print(f"⚙️ [Налаштування] Після обробки черги: ГРУПА {current_group}, ВАРІАНТ {current_variant}")
+
         save_memory(current_group, current_variant, msg_ids, last_imgs, hours_by_date, last_dates)
-    except Exception as e: print(f"❌ [Помилка] Зв'язок з Telegram API: {e}")
+    except Exception as e: print(f"❌ [Помилка] Перевірка команд: {e}")
+
 
     driver = None
     try:
