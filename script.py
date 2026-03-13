@@ -6,6 +6,9 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
 
 # --- КОНФІГУРАЦІЯ ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -193,9 +196,26 @@ def check_and_update():
         options.add_argument("--window-size=390,1200")
         options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        #driver.get(URL_SITE)
+        #time.sleep(10)
+
+        print(f"🌐 [Крок 2] Запуск браузера та завантаження {URL_SITE}...")
+        # ... ваші options та driver ...
         driver.get(URL_SITE)
-        time.sleep(10)
-        
+
+        # Чекаємо до 15 секунд, поки на сторінці з'явиться текст "Графік погодинних відключень"
+        try:
+            wait = WebDriverWait(driver, 15)
+            wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            # Додатково чекаємо появу специфічного тексту графіку
+            wait.until(lambda d: "Графік погодинних відключень на" in d.find_element(By.TAG_NAME, "body").text.lower())
+            print("✅ [Сайт] Сторінку завантажено, дані знайдено.")
+        except Exception as e:
+            print(f"⚠️ [Таймаут] Сайт не відповів вчасно або графіки відсутні: {e}")
+            # Можна вийти з функції, щоб не парсити порожню сторінку
+            return 
+
+
         full_text = driver.find_element(By.TAG_NAME, "body").text
         current_dates = re.findall(r"відключень на (\d{2}\.\d{2}\.\d{4})", full_text)
         found_times = re.findall(r"станом на (\d{2}:\d{2})", full_text)
