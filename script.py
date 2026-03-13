@@ -8,6 +8,7 @@ from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
 
 # --- КОНФІГУРАЦІЯ ---
@@ -199,21 +200,47 @@ def check_and_update():
         #driver.get(URL_SITE)
         #time.sleep(10)
 
+
+# ... усередині check_and_update():
         print(f"🌐 [Крок 2] Запуск браузера та завантаження {URL_SITE}...")
-        # ... ваші options та driver ...
+        # ... налаштування options та driver ...
         driver.get(URL_SITE)
 
-        # Чекаємо до 15 секунд, поки на сторінці з'явиться текст "Графік погодинних відключень"
-        try:
-            wait = WebDriverWait(driver, 15)
-            wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-            # Додатково чекаємо появу специфічного тексту графіку
-            wait.until(lambda d: "Графік погодинних відключень на" in d.find_element(By.TAG_NAME, "body").text.lower())
-            print("✅ [Сайт] Сторінку завантажено, дані знайдено.")
-        except Exception as e:
-            print(f"⚠️ [Таймаут] Сайт не відповів вчасно або графіки відсутні: {e}")
-            # Можна вийти з функції, щоб не парсити порожню сторінку
-            return 
+        content_found = False
+        for attempt in range(2):  # Робимо 2 спроби (основна + 1 перезавантаження)
+            try:
+                # Чекаємо до 15 секунд, поки на сторінці з'явиться текст "Графік погодинних відключень"
+                wait = WebDriverWait(driver, 15)
+                # Чекаємо появу body
+                wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                
+                # Перевірка на ключові маркери (графіки + Укренерго)
+                def check_content(d):
+                    t = d.find_element(By.TAG_NAME, "body").text
+                    return "відключень на" in t.lower() and 'Укренерго' in t.lower()
+
+                wait.until(check_content)
+                content_found = True
+                print(f"✅ [Сайт] Дані знайдено на спробі {attempt + 1}.")
+                break 
+            except TimeoutException:
+                if attempt == 0:
+                    print("🔄 [Таймаут] Потрібний контент не знайдено. Перезавантажую сторінку...")
+                    driver.refresh()
+                    time.sleep(3) # Коротка пауза після рефрешу
+                else:
+                    print("⚠️ [Помилка] Навіть після перезавантаження дані не з'явилися.")
+
+        if not content_found:
+            # Якщо контент не знайдено, перевіряємо чи є хоча б текст про відсутність графіків
+            full_text = driver.find_element(By.TAG_NAME, "body").text
+            if "графік відключень відсутній" in full_text.lower():
+                print("ℹ️ [Сайт] Офіційне повідомлення: графіків наразі немає.")
+            else:
+                print("🛑 [Стоп] Сторінка не валідна. Перериваємо цикл.")
+                return 
+
+        # Далі йде ваш парсинг full_text = driver.find_element(By.TAG_NAME, "body").text ...
 
 
         full_text = driver.find_element(By.TAG_NAME, "body").text
