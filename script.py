@@ -145,20 +145,18 @@ def check_and_update():
 
 
 
+
     print("📩 [Крок 1] Перевірка нових повідомлень...")
     try:
-        # 1. Очищуємо токен від слова 'bot' та слешів, якщо вони там є
-        # Наприклад, якщо TOKEN було "/bot123:abc", залишиться "123:abc"
-        t_raw = TOKEN.replace("/bot", "").replace("/", "").strip()
-        
-        # 2. Формуємо URL суворо за стандартом API
-        url = f"https://telegram.org{t_raw}/getUpdates"
-        params = {'limit': 20, 'offset': -20}
-        
-        # Визначаємо ID останнього бота
+        # Визначаємо останній ID від бота
         last_bot_mid = max(msg_ids) if msg_ids and isinstance(msg_ids, list) else (msg_ids if isinstance(msg_ids, int) else 0)
 
-        resp = requests.get(url, params=params)
+        # ФОРМУЄМО URL (TOKEN вже містить /bot...)
+        # Використовуємо ПОВНИЙ домен api.telegram.org
+        url_get = f"https://api.telegram.org{TOKEN}/getUpdates"
+        
+        # Робимо запит з параметрами
+        resp = requests.get(url_get, params={'limit': 20, 'offset': -20}, timeout=10)
         
         if resp.status_code == 200:
             data = resp.json()
@@ -168,23 +166,27 @@ def check_and_update():
                     m_text = msg_obj.get('text', '').strip()
                     m_id = msg_obj.get('message_id', 0)
 
+                    # ЧИСТИМО ЧАТ: якщо є БУДЬ-ЯКЕ повідомлення після бота
                     if m_id > last_bot_mid:
                         user_interfered = True
                         print(f"🧹 [Дія] Помічено активність (ID: {m_id})")
                         
+                        # МІНЯЄМО НАЛАШТУВАННЯ: тільки за суворими командами
                         if m_text.startswith("/"):
                             if m_text == "/1": current_variant = 1
                             elif m_text == "/2": current_variant = 2
+                            
                             g_match = re.search(r"^/(\d\.\d)$", m_text)
                             if g_match:
                                 current_group = g_match.group(1)
+                                # Скидаємо пам'ять для нової групи
                                 hours_by_date, last_dates = {}, []
                 
-                # Підтверджуємо отримання
+                # Підтверджуємо отримання (щоб не читати старі повідомлення)
                 l_upd = data['result'][-1]['update_id']
-                requests.get(f"https://telegram.org{t_raw}/getUpdates", params={'offset': l_upd + 1})
+                requests.get(url_get, params={'offset': l_upd + 1})
         else:
-            print(f"❌ [Помилка API] Код {resp.status_code}. Перевірте TOKEN!")
+            print(f"❌ [Помилка] Код {resp.status_code}. URL: {url_get}")
 
         save_memory(current_group, current_variant, msg_ids, last_imgs, hours_by_date, last_dates)
     except Exception as e:
