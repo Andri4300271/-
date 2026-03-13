@@ -146,52 +146,47 @@ def check_and_update():
 
     print("📩 [Крок 1] Перевірка нових повідомлень...")
     try:
-        # Визначаємо останній ID від бота
         last_bot_mid = max(msg_ids) if msg_ids and isinstance(msg_ids, list) else (msg_ids if isinstance(msg_ids, int) else 0)
         
-        # Робимо запит безпосередньо
-        url = f"https://telegram.org{TOKEN}/getUpdates?limit=20&offset=-20"
-        resp = requests.get(url)
+        # Формуємо URL чітко: перевіряємо, чи TOKEN вже має "/" на початку
+        base_url = "https://telegram.org"
+        clean_token = TOKEN if TOKEN.startswith("/") else f"/{TOKEN}"
+        full_url = f"{base_url}{clean_token}/getUpdates?limit=20&offset=-20"
         
-        # Перевірка: якщо не 200, то навіть не намагаємось читати дані
+        resp = requests.get(full_url)
+        
         if resp.status_code == 200:
             try:
                 data = resp.json()
+                if data.get('result'):
+                    for upd in data['result']:
+                        msg_obj = upd.get('message', {})
+                        m_text = msg_obj.get('text', '').strip()
+                        m_id = msg_obj.get('message_id', 0)
+
+                        if m_id > last_bot_mid:
+                            user_interfered = True
+                            if m_text.startswith("/"):
+                                if m_text == "/1": current_variant = 1
+                                elif m_text == "/2": current_variant = 2
+                                g_match = re.search(r"^/(\d\.\d)$", m_text)
+                                if g_match:
+                                    current_group = g_match.group(1)
+                                    hours_by_date, last_dates = {}, []
+                    
+                    l_upd = data['result'][-1]['update_id']
+                    requests.get(f"{base_url}{clean_token}/getUpdates?offset={l_upd + 1}")
             except:
-                print("⚠️ [Крок 1] Отримано не JSON. Пропускаємо.")
-                data = {}
-
-            if data.get('result'):
-                for upd in data['result']:
-                    msg_obj = upd.get('message', {})
-                    m_text = msg_obj.get('text', '').strip()
-                    m_id = msg_obj.get('message_id', 0)
-
-                    # 1. ЧИСТИМО ЧАТ: якщо є БУДЬ-ЯКЕ нове повідомлення (навіть "привіт")
-                    if m_id > last_bot_mid:
-                        user_interfered = True
-                        
-                        # 2. МІНЯЄМО НАЛАШТУВАННЯ: тільки якщо це сувора команда з "/"
-                        if m_text.startswith("/"):
-                            if m_text == "/1": current_variant = 1
-                            elif m_text == "/2": current_variant = 2
-                            
-                            g_match = re.search(r"^/(\d\.\d)$", m_text)
-                            if g_match:
-                                new_group = g_match.group(1)
-                                if new_group != current_group:
-                                    current_group, hours_by_date, last_dates = new_group, {}, []
-                
-                # Підтверджуємо отримання через останній update_id
-                l_upd = data['result'][-1]['update_id']
-                requests.get(f"https://telegram.org{TOKEN}/getUpdates?offset={l_upd + 1}")
+                print(f"❌ [Помилка] Не JSON. Текст відповіді: {resp.text[:100]}")
         else:
-            print(f"⚠️ [Крок 1] Помилка сервера Telegram: {resp.status_code}")
+            print(f"❌ [Помилка API] Код {resp.status_code}. Перевірте TOKEN!")
+            print(f"🔗 Спроба виклику: {base_url}{clean_token}/getUpdates")
 
         save_memory(current_group, current_variant, msg_ids, last_imgs, hours_by_date, last_dates)
     except Exception as e:
-        print(f"⚠️ [Крок 1] Затримка (код продовжує роботу): {e}")
+        print(f"⚠️ [Крок 1] Помилка: {e}")
 
+    
     
 
     
