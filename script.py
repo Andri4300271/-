@@ -144,43 +144,28 @@ def check_and_update():
     user_interfered = False
 
 
-    # --- КРОК 1: ПЕРЕВІРКА КОМАНД ---
+
+
     print("📩 [Крок 1] Перевірка нових команд у Telegram-боті...")
-    last_bot_mid = max(msg_ids) if msg_ids and isinstance(msg_ids, list) else (msg_ids if isinstance(msg_ids, int) else 0)
-
     try:
-        # Додаємо базову перевірку проксі або формату токена
-        if not TOKEN.startswith("bot"): 
-            print("⚠️ УВАГА: TOKEN має починатися з 'bot...' в URL запиту!")
-            
-        res_raw = requests.get(f"https://telegram.org/bot{TOKEN}/getUpdates?limit=50&offset=-50")
-        if res_raw.status_code == 200:
-            res = res_raw.json()
-            if res.get('result'):
-                for upd in res['result']:
-                    msg_obj = upd.get('message', {})
-                    msg_text = msg_obj.get('text', '').strip()
-                    msg_id = msg_obj.get('message_id', 0)
-
-                    # УМОВА: Тільки нові повідомлення після бота і ТІЛЬКИ з "/"
-                    if msg_id > last_bot_mid and msg_text.startswith("/"):
-                        user_interfered = True
-                        if msg_text == "/1": current_variant = 1
-                        elif msg_text == "/2": current_variant = 2
-                        
-                        group_match = re.search(r"^/(\d\.\d)$", msg_text)
-                        if group_match:
-                            new_group = group_match.group(1)
-                            if new_group != current_group:
-                                current_group, hours_by_date, last_dates = new_group, {}, []
-                    
-                    # Підтверджуємо, щоб черга не забивалася
-                    requests.get(f"https://telegram.org{TOKEN}/getUpdates?offset={upd['update_id'] + 1}")
-        else:
-            print(f"⚠️ Telegram повернув помилку: {res_raw.status_code}")
-    except Exception as e: 
-        print(f"❌ [Помилка] Перевірка команд: {e}")
-
+        res = requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset=-1&limit=10").json()
+        if res.get('result'):
+            for upd in res['result']:
+                msg_text = upd.get('message', {}).get('text', '')
+                if msg_text:
+                    print(f"💬 [Текст] Отримано запит користувача: '{msg_text}'.")
+                    user_interfered = True
+                    if "/1" in msg_text: current_variant = 1; print("🔄 [Зміна] Обрано ВАРІАНТ 1 (Фото).")
+                    if "/2" in msg_text: current_variant = 2; print("🔄 [Зміна] Обрано ВАРІАНТ 2 (Текст).")
+                    cmd = re.search(r"(\d\.\d)", msg_text)
+                    if cmd:
+                        new_group = cmd.group(1)
+                        if new_group != current_group:
+                            print(f"🎯 [Зміна] Нова група: {new_group}. Очищаємо пам'ять дат.")
+                            current_group, hours_by_date, last_dates = new_group, {}, []
+                requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={upd['update_id'] + 1}")
+        save_memory(current_group, current_variant, msg_ids, last_imgs, hours_by_date, last_dates)
+    except Exception as e: print(f"❌ [Помилка] Зв'язок з Telegram API: {e}")
 
     driver = None
     try:
