@@ -302,7 +302,7 @@ def check_and_update():
         should_update = user_interfered or any_schedule_change or new_graph_appeared
         if current_variant == 1 and any_site_time_change: should_update = True
 
-        if should_update:
+        №if should_update:
             #print("🚀 [Дія] Помічено зміни або запит! Виконуємо повне оновлення з очищенням.")
 
 
