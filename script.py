@@ -377,10 +377,10 @@ def check_and_update():
 
 if __name__ == "__main__":
     print("🤖 Бот запущено. Починаю роботу...")
-    for cycle in range(1):
+    for cycle in range(7):
         print(f"\n--- ЦИКЛ {cycle + 1} З 7 ---")
         check_and_update()
         if cycle < 6:
             print("⏳ [Очікування] 140 секунд до наступної перевірки...")
-            #time.sleep(140)
+            time.sleep(140)
     print("\n🏁 [Кінець] Всі цикли виконано.")
