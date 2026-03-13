@@ -144,15 +144,13 @@ def check_and_update():
     user_interfered = False
 
 
-    print("📩 [Крок 1] Перевірка команд...")
+        print("📩 [Крок 1] Перевірка нових повідомлень...")
     try:
-        # Визначаємо ID останнього повідомлення від бота (як точку відліку)
+        # Останній ID від бота
         last_bot_mid = max(msg_ids) if msg_ids and isinstance(msg_ids, list) else (msg_ids if isinstance(msg_ids, int) else 0)
         
-        # Робимо запит
-        resp = requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset=-10&limit=20")
+        resp = requests.get(f"https://telegram.org{TOKEN}/getUpdates?limit=10&offset=-10")
         
-        # Перевіряємо, чи прийшов JSON, щоб не було помилки "line 1 column 1"
         if resp.status_code == 200:
             data = resp.json()
             if data.get('result'):
@@ -161,29 +159,31 @@ def check_and_update():
                     msg_text = msg_obj.get('text', '').strip()
                     msg_id = msg_obj.get('message_id', 0)
 
-                    # УМОВА: Тільки нові повідомлення після бота і ТІЛЬКИ ті, що починаються з "/"
-                    if msg_id > last_bot_mid and msg_text.startswith("/"):
-                        print(f"💬 [Команда] Оброблено: '{msg_text}'.")
+                    # УМОВА 1: Якщо є БУДЬ-ЯКЕ нове повідомлення від вас після бота — чистимо чат
+                    if msg_id > last_bot_mid:
                         user_interfered = True
-                        
-                        # Варіант: /1 або /2
-                        if msg_text == "/1": current_variant = 1
-                        elif msg_text == "/2": current_variant = 2
-                        
-                        # Група: строго /X.X (наприклад /3.2)
-                        group_cmd = re.search(r"^/(\d\.\d)$", msg_text)
-                        if group_match:
-                            new_group = group_match.group(1)
-                            if new_group != current_group:
-                                current_group, hours_by_date, last_dates = new_group, {}, []
+                        print(f"🧹 [Помічено] Нове повідомлення (ID: {msg_id}). Буде активовано очищення.")
+
+                        # УМОВА 2: Якщо це ПРАВИЛЬНА команда з "/", оновлюємо налаштування
+                        if msg_text.startswith("/"):
+                            if msg_text == "/1": current_variant = 1
+                            elif msg_text == "/2": current_variant = 2
+                            
+                            group_match = re.search(r"^/(\d\.\d)$", msg_text)
+                            if group_match:
+                                new_group = group_match.group(1)
+                                if new_group != current_group:
+                                    print(f"🎯 [Налаштування] Нова група: {new_group}")
+                                    current_group, hours_by_date, last_dates = new_group, {}, []
                 
-                # Підтверджуємо отримання (offset)
-                last_update_id = data['result'][-1]['update_id']
-                requests.get(f"https://api.telegram.org{TOKEN}/getUpdates?offset={last_update_id + 1}")
+                # Підтверджуємо отримання, щоб не читати старе в наступному циклі
+                last_upd_id = data['result'][-1]['update_id']
+                requests.get(f"https://telegram.org{TOKEN}/getUpdates?offset={last_upd_id + 1}")
         
         save_memory(current_group, current_variant, msg_ids, last_imgs, hours_by_date, last_dates)
     except Exception as e: 
-        print(f"⚠️ [Крок 1] Тимчасова помилка API (пропускаємо): {e}")
+        print(f"⚠️ [Крок 1] Помилка: {e}")
+
 
     
     driver = None
