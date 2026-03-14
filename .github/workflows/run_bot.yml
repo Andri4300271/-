@@ -1,7 +1,7 @@
 name: Check Power Schedule
 
 on:
-  schedule:
+  #schedule:
     #- cron: '*/5 * * * *' # Запуск кожні 10 хвилин
   workflow_dispatch: # Можливість ручного запуску
 
